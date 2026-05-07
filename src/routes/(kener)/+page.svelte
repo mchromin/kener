@@ -4,7 +4,7 @@
   import EventsCard from "$lib/components/EventsCard.svelte";
   import MonitorBar from "$lib/components/MonitorBar.svelte";
   import IncidentItem from "$lib/components/IncidentItem.svelte";
-  import MaintenanceItem from "$lib/components/MaintenanceItem.svelte";
+  import MaintenanceGroups from "$lib/components/MaintenanceGroups.svelte";
   import mdToHTML from "$lib/marked.js";
   import clientResolver from "$lib/client/resolver.js";
   import { resolve } from "$app/paths";
@@ -178,24 +178,10 @@
         {/each}
       </div>
     {/if}
-    {#if data.ongoingMaintenances && data.ongoingMaintenances.length > 0}
-      <div class="flex flex-col gap-3">
-        {#each data.ongoingMaintenances as maintenance, i (maintenance.id ?? i)}
-          <div class="rounded-3xl border p-3 sm:p-4">
-            <MaintenanceItem {maintenance} />
-          </div>
-        {/each}
-      </div>
-    {/if}
-    {#if data.upcomingMaintenances && data.upcomingMaintenances.length > 0}
-      <div class="flex flex-col gap-3">
-        {#each data.upcomingMaintenances as maintenance, i (maintenance.id ?? i)}
-          <div class="rounded-3xl border p-3 sm:p-4">
-            <MaintenanceItem {maintenance} />
-          </div>
-        {/each}
-      </div>
-    {/if}
+    <MaintenanceGroups
+      ongoing={data.ongoingMaintenances ?? []}
+      upcoming={data.upcomingMaintenances ?? []}
+    />
     <div class="overflow-hidden rounded-3xl border">
       <div class={`grid grid-cols-1 ${getGridContainerClass(viewType)}`}>
         {#each data.monitorTags as tag, i (tag)}
