@@ -377,28 +377,13 @@ export const GetPageDashboardData = async (
     };
   }
   const eventSettings = layoutData.eventDisplaySettings;
-  // Fetch all dashboard data in parallel (respecting feature toggles)
-  const [latestData, parsedMonitors, ongoingIncidents, ongoingMaintenances, upcomingMaintenances] = await Promise.all([
-    GetLatestMonitoringDataAllActive(monitorTags),
-    GetMonitorsParsed({ tags: monitorTags, status: "ACTIVE", is_hidden: "NO" }),
-    eventSettings.incidents.enabled && eventSettings.incidents.ongoing.show
-      ? GetOngoingIncidentsForMonitorList(monitorTags)
-      : Promise.resolve([] as IncidentForMonitorListWithComments[]),
-    eventSettings.maintenances.enabled && eventSettings.maintenances.ongoing.show
-      ? GetOngoingMaintenances(monitorTags, nowTs)
-      : Promise.resolve([] as MaintenanceEventsMonitorList[]),
-    eventSettings.maintenances.enabled && eventSettings.maintenances.upcoming.show
-      ? GetUpcomingMaintenanceEventsForMonitorList(
-          monitorTags,
-          eventSettings.maintenances.upcoming.maxCount,
-          eventSettings.maintenances.upcoming.daysInFuture,
-        )
-      : Promise.resolve([] as MaintenanceEventsMonitorList[]),
-  ]);
 
-  const pageStatus = BuildPageStatus(latestData, nowTs);
+  // Resolve parsed monitors first so we can expand GROUP monitors to their
+  // member tags before querying events. This ensures incidents/maintenances
+  // attached to a group member surface on a page that only lists the group.
+  const parsedMonitors = await GetMonitorsParsed({ tags: monitorTags, status: "ACTIVE", is_hidden: "NO" });
+
   const monitorGroupMembersByTag: Record<string, string[]> = {};
-
   for (const monitor of parsedMonitors) {
     if (monitor.monitor_type !== "GROUP") continue;
 
@@ -407,6 +392,30 @@ export const GetPageDashboardData = async (
 
     monitorGroupMembersByTag[monitor.tag] = groupData.monitors.map((member) => member.tag);
   }
+
+  const groupMemberTags = Object.values(monitorGroupMembersByTag).flat();
+  const eventQueryTags =
+    groupMemberTags.length > 0 ? Array.from(new Set([...monitorTags, ...groupMemberTags])) : monitorTags;
+
+  // Fetch remaining dashboard data in parallel (respecting feature toggles)
+  const [latestData, ongoingIncidents, ongoingMaintenances, upcomingMaintenances] = await Promise.all([
+    GetLatestMonitoringDataAllActive(monitorTags),
+    eventSettings.incidents.enabled && eventSettings.incidents.ongoing.show
+      ? GetOngoingIncidentsForMonitorList(eventQueryTags)
+      : Promise.resolve([] as IncidentForMonitorListWithComments[]),
+    eventSettings.maintenances.enabled && eventSettings.maintenances.ongoing.show
+      ? GetOngoingMaintenances(eventQueryTags, nowTs)
+      : Promise.resolve([] as MaintenanceEventsMonitorList[]),
+    eventSettings.maintenances.enabled && eventSettings.maintenances.upcoming.show
+      ? GetUpcomingMaintenanceEventsForMonitorList(
+          eventQueryTags,
+          eventSettings.maintenances.upcoming.maxCount,
+          eventSettings.maintenances.upcoming.daysInFuture,
+        )
+      : Promise.resolve([] as MaintenanceEventsMonitorList[]),
+  ]);
+
+  const pageStatus = BuildPageStatus(latestData, nowTs);
 
   return {
     pageStatus,

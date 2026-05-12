@@ -48,7 +48,7 @@
     {/if}
 
     {#if maintenance.monitors && maintenance.monitors.length > 0 && !hideMonitors}
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-x-3 gap-y-1">
         {#each maintenance.monitors as monitor}
           <Popover.Root>
             <Popover.Trigger disabled={isEmbedded}>

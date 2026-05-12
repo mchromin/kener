@@ -550,24 +550,15 @@ export class MaintenancesRepository extends BaseRepository {
     daysInPast: number,
   ): Promise<MaintenanceEventsMonitorList[]> {
     const pastTimestamp = timestamp - daysInPast * 24 * 60 * 60;
-    const rows = await this.knex("maintenances_events")
-      .select(
-        "maintenances_events.id",
-        "maintenances.title",
-        "maintenances.description",
-        "maintenances_events.start_date_time",
-        "maintenances_events.end_date_time",
-        "maintenance_monitors.monitor_tag",
-        "maintenance_monitors.monitor_impact",
-        "monitors.name as monitor_name",
-        "monitors.image as monitor_image",
-        "monitors.is_hidden as monitor_is_hidden",
-        "maintenances_events.created_at",
-        "maintenances_events.updated_at",
-      )
+
+    // First, pick the N most-recent distinct event IDs that match.
+    // We cannot apply LIMIT directly on the JOIN below because it would
+    // truncate joined monitor rows mid-event (e.g. 5 rows total instead of
+    // "5 events"). Selecting event IDs first keeps the LIMIT per-event.
+    const eventIdRows = await this.knex("maintenances_events")
+      .distinct("maintenances_events.id", "maintenances_events.end_date_time")
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
-      .leftJoin("monitors", "maintenance_monitors.monitor_tag", "monitors.tag")
       .where(function () {
         this.whereIn("maintenance_monitors.monitor_tag", monitorTags).orWhere("maintenances.is_global", "YES");
       })
@@ -577,20 +568,9 @@ export class MaintenancesRepository extends BaseRepository {
       .orderBy("maintenances_events.end_date_time", "desc")
       .limit(limit);
 
-    return this.groupMaintenancesByIdForMonitorList(rows);
-  }
+    const eventIds = eventIdRows.map((r: { id: number }) => r.id);
+    if (eventIds.length === 0) return [];
 
-  /**
-   * Get upcoming maintenance events for a list of monitors
-   * Returns scheduled maintenance events within the specified days
-   */
-  async getUpcomingMaintenanceEventsForMonitorList(
-    timestamp: number,
-    monitorTags: string[],
-    limit: number,
-    daysInFuture: number,
-  ): Promise<MaintenanceEventsMonitorList[]> {
-    const futureTimestamp = timestamp + daysInFuture * 24 * 60 * 60;
     const rows = await this.knex("maintenances_events")
       .select(
         "maintenances_events.id",
@@ -610,6 +590,37 @@ export class MaintenancesRepository extends BaseRepository {
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
       .leftJoin("monitors", "maintenance_monitors.monitor_tag", "monitors.tag")
+      .whereIn("maintenances_events.id", eventIds)
+      .andWhere(function () {
+        // Only include monitor rows that belong to the page (or any monitor if
+        // the maintenance is global). This preserves per-page scoping without
+        // limiting the number of rows.
+        this.whereIn("maintenance_monitors.monitor_tag", monitorTags).orWhere("maintenances.is_global", "YES");
+      })
+      .orderBy("maintenances_events.end_date_time", "desc");
+
+    return this.groupMaintenancesByIdForMonitorList(rows);
+  }
+
+  /**
+   * Get upcoming maintenance events for a list of monitors
+   * Returns scheduled maintenance events within the specified days
+   */
+  async getUpcomingMaintenanceEventsForMonitorList(
+    timestamp: number,
+    monitorTags: string[],
+    limit: number,
+    daysInFuture: number,
+  ): Promise<MaintenanceEventsMonitorList[]> {
+    const futureTimestamp = timestamp + daysInFuture * 24 * 60 * 60;
+
+    // First, pick the N earliest distinct event IDs that match.
+    // Applying LIMIT to the JOIN below would truncate monitor rows mid-event
+    // (e.g. a maintenance with 12 monitors would show only 5 of them).
+    const eventIdRows = await this.knex("maintenances_events")
+      .distinct("maintenances_events.id", "maintenances_events.start_date_time")
+      .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
+      .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
       .where(function () {
         this.whereIn("maintenance_monitors.monitor_tag", monitorTags).orWhere("maintenances.is_global", "YES");
       })
@@ -619,6 +630,37 @@ export class MaintenancesRepository extends BaseRepository {
       .andWhere("maintenances_events.start_date_time", "<=", futureTimestamp)
       .orderBy("maintenances_events.start_date_time", "asc")
       .limit(limit);
+
+    const eventIds = eventIdRows.map((r: { id: number }) => r.id);
+    if (eventIds.length === 0) return [];
+
+    const rows = await this.knex("maintenances_events")
+      .select(
+        "maintenances_events.id",
+        "maintenances.title",
+        "maintenances.description",
+        "maintenances_events.start_date_time",
+        "maintenances_events.end_date_time",
+        "maintenance_monitors.monitor_tag",
+        "maintenance_monitors.monitor_impact",
+        "monitors.name as monitor_name",
+        "monitors.image as monitor_image",
+        "monitors.is_hidden as monitor_is_hidden",
+        "maintenances_events.created_at",
+        "maintenances_events.updated_at",
+        "maintenances_events.status as status",
+      )
+      .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
+      .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
+      .leftJoin("monitors", "maintenance_monitors.monitor_tag", "monitors.tag")
+      .whereIn("maintenances_events.id", eventIds)
+      .andWhere(function () {
+        // Only include monitor rows that belong to the page (or any monitor if
+        // the maintenance is global). This preserves per-page scoping without
+        // limiting the number of rows.
+        this.whereIn("maintenance_monitors.monitor_tag", monitorTags).orWhere("maintenances.is_global", "YES");
+      })
+      .orderBy("maintenances_events.start_date_time", "asc");
 
     return this.groupMaintenancesByIdForMonitorList(rows);
   }
