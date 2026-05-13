@@ -120,4 +120,5 @@ export interface EvalResponse {
   status?: string;
   latency?: number;
   type?: string;
+  error_message?: unknown;
 }

@@ -203,6 +203,19 @@ class ApiCall {
       toWrite.type = GC.TIMEOUT;
     }
 
+    // Propagate error_message returned from the user's eval function (if any).
+    // Accept any primitive/object and coerce to string; truncate long messages.
+    if (evalResp.error_message !== undefined && evalResp.error_message !== null) {
+      let evalErr =
+        typeof evalResp.error_message === "string"
+          ? evalResp.error_message
+          : String(evalResp.error_message);
+      if (evalErr.length > 200) {
+        evalErr = evalErr.substring(0, 200) + "...";
+      }
+      toWrite.error_message = errorMessage ? `${errorMessage} | ${evalErr}` : evalErr;
+    }
+
     return toWrite;
   }
 }
