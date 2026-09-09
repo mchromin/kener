@@ -9,31 +9,17 @@
   import { formatDate, formatDuration } from "$lib/stores/datetime";
   import { t } from "$lib/stores/i18n";
   import type { NotificationEvent } from "$lib/server/controllers/dashboardController.js";
-  import Calendar from "@lucide/svelte/icons/calendar-1";
-  import { format } from "date-fns";
   import { onMount } from "svelte";
 
   interface Props {
     monitorTags?: string[];
     compact?: boolean;
-    eventsPath: string;
   }
 
-  let { monitorTags = [], compact = true, eventsPath = "" }: Props = $props();
+  let { monitorTags = [], compact = true }: Props = $props();
   let open = $state(false);
   let notifications = $state<NotificationEvent[]>([]);
   let loading = $state(false);
-
-  const defaultEventsPath = $derived(`/events/${format(new Date(), "MMMM-yyyy")}`);
-
-  const resolvedEventsPath = $derived.by(() => {
-    const finalEventsPath = eventsPath || defaultEventsPath;
-    if (page.data?.globalPageVisibilitySettings?.forceExclusivity) {
-      const currentPagePath = page.params?.page_path?.trim();
-      return currentPagePath ? `/${currentPagePath}${finalEventsPath}` : finalEventsPath;
-    }
-    return finalEventsPath;
-  });
 
   async function fetchNotifications() {
     loading = true;
@@ -63,7 +49,7 @@
         {...props}
         variant="outline"
         size={compact ? "icon-sm" : "sm"}
-        class="bg-background/80 dark:bg-background/70 border-foreground/10 relative mr-2 rounded-full border text-xs shadow-none backdrop-blur-md"
+        class="bg-background/80 dark:bg-background/70 border-foreground/10 relative rounded-full border text-xs shadow-none backdrop-blur-md"
         aria-label={$t("Notifications")}
       >
         {#if loading}
@@ -87,11 +73,8 @@
     class="bg-background/30 supports-backdrop-filter:bg-background/20 w-96 rounded-3xl border   p-0 shadow-2xl backdrop-blur-2xl"
     sideOffset={8}
   >
-    <div class="flex items-center justify-between border-b px-4 py-3">
+    <div class="border-b px-4 py-3">
       <h4 class="text-sm font-semibold">{$t("Events")}</h4>
-      <Button variant="outline" href={clientResolver(resolve, resolvedEventsPath)} size="icon-sm" class="rounded-btn">
-        <Calendar class="size-4" />
-      </Button>
     </div>
 
     {#if notifications.length === 0}

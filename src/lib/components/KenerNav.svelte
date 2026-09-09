@@ -11,6 +11,7 @@
   import MenuIcon from "@lucide/svelte/icons/menu";
   import Sun from "@lucide/svelte/icons/sun";
   import Moon from "@lucide/svelte/icons/moon";
+  import Calendar from "@lucide/svelte/icons/calendar-1";
   import { setMode, mode } from "mode-watcher";
   import { i18n, t } from "$lib/stores/i18n";
   import LanguageSelector from "./LanguageSelector.svelte";
@@ -53,6 +54,13 @@
   }
 
   const eventsPath = $derived(`/events/${format(new Date(), "MMMM-yyyy")}`);
+  const resolvedEventsPath = $derived.by(() => {
+    if (page.data?.globalPageVisibilitySettings?.forceExclusivity) {
+      const currentPagePath = page.params?.page_path?.trim();
+      return currentPagePath ? `/${currentPagePath}${eventsPath}` : eventsPath;
+    }
+    return eventsPath;
+  });
   const showPageSelector = $derived(
     !page.data?.globalPageVisibilitySettings?.forceExclusivity &&
       !!page.data?.globalPageVisibilitySettings?.showSwitcher
@@ -143,18 +151,14 @@
 
       <!-- Page selector (board switcher) -->
       {#if showPageSelector}
-        <div class="ml-auto mr-1 shrink-0">
+        <div class="mr-1 ml-auto shrink-0">
           <PageSelector />
         </div>
       {/if}
 
       <!-- Desktop UI preference controls: theme / language / timezone -->
-      <ButtonGroup.Root
-        class={[
-          "rounded-btn-grp mr-1 hidden shrink-0 sm:flex",
-          !showPageSelector && "ml-auto"
-        ]}
-      >        {#if page.data?.isThemeToggleEnabled}
+      <ButtonGroup.Root class={["rounded-btn-grp mr-1 hidden shrink-0 sm:flex", !showPageSelector && "ml-auto"]}>
+        {#if page.data?.isThemeToggleEnabled}
           <Button
             variant="outline"
             size="icon-sm"
@@ -178,12 +182,7 @@
       </ButtonGroup.Root>
 
       <!-- Mobile UI preference controls -->
-      <ButtonGroup.Root
-        class={[
-          "rounded-btn-grp mr-1 flex shrink-0 sm:hidden",
-          !showPageSelector && "ml-auto"
-        ]}
-      >
+      <ButtonGroup.Root class={["rounded-btn-grp mr-1 flex shrink-0 sm:hidden", !showPageSelector && "ml-auto"]}>
         {#if page.data?.isThemeToggleEnabled}
           <Button
             variant="outline"
@@ -208,8 +207,17 @@
       </ButtonGroup.Root>
 
       <!-- Notifications / alerts -->
-      <div class="mr-1 shrink-0">
-        <NotificationsPopover {eventsPath} compact={true} />
+      <div class="mr-1 flex shrink-0 items-center gap-1">
+        <NotificationsPopover compact={true} />
+        <Button
+          variant="outline"
+          size="icon-sm"
+          href={clientResolver(resolve, resolvedEventsPath)}
+          aria-label={$t("Events")}
+          class="bg-background/80 dark:bg-background/70 border-foreground/10 rounded-full border shadow-none backdrop-blur-md"
+        >
+          <Calendar class="h-4 w-4" />
+        </Button>
       </div>
 
       <!-- Subscribe -->
