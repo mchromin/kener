@@ -80,6 +80,14 @@ const GetDayEndTimestampUTC = function (timestamp: number): number {
 const DurationInMinutes = function (start: number, end: number): number {
   return Math.floor((end - start) / 60);
 };
+//format a Date or UTC-seconds timestamp as "YYYY-MM-DD HH:mm:ss UTC" so notifications never leak the server timezone
+const FormatUTCDateTime = function (input: Date | number | string): string {
+  const date = input instanceof Date ? input : typeof input === "number" ? new Date(input * 1000) : new Date(input);
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+  return `${date.toISOString().slice(0, 19).replace("T", " ")} UTC`;
+};
 const GetDayStartWithOffset = function (timeStampInSeconds: number, offsetInMinutes: number): number {
   const then = new Date(GetMinuteStartTimestampUTC(timeStampInSeconds) * 1000);
   let dayStartThen = GetDayStartTimestampUTC(then.getTime() / 1000);
@@ -544,6 +552,7 @@ export {
   GetDayStartTimestampUTC,
   GetMinuteStartNowTimestampUTC,
   DurationInMinutes,
+  FormatUTCDateTime,
   GetDayStartWithOffset,
   BeginningOfDay,
   IsStringURLSafe,

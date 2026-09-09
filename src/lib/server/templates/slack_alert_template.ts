@@ -60,7 +60,7 @@ const template = `{
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "🕐 *Time:* {{alert_timestamp}}"
+          "text": "🕐 *Time:* {{alert_timestamp_utc}}"
         },
         {
           "type": "mrkdwn",

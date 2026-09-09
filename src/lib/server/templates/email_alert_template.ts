@@ -100,8 +100,8 @@ const emailTemplate = `<!DOCTYPE html>
         <td width="60%" style="text-align: right;">{{alert_status}}</td>
       </tr>
       <tr style="border-bottom: 1px solid #eee;">
-        <td width="40%" style="color: #666; font-weight: 500;">Time</td>
-        <td width="60%" style="text-align: right;">{{alert_timestamp}}</td>
+        <td width="40%" style="color: #666; font-weight: 500;">Time (UTC)</td>
+        <td width="60%" style="text-align: right;">{{alert_timestamp_utc}}</td>
       </tr>
       <tr style="border-bottom: 1px solid #eee;">
         <td width="40%" style="color: #666; font-weight: 500;">Severity</td>

@@ -398,9 +398,9 @@
             <p class="text-muted-foreground text-xs">
               Use Mustache variables like <code class="bg-muted rounded px-1">{"{{variable}}"}</code>. Available:
               alert_id, alert_name, alert_for, alert_value, alert_status, alert_severity, alert_message, alert_source,
-              alert_timestamp, alert_cta_url, alert_cta_text, alert_incident_id, alert_incident_url,
-              alert_failure_threshold, alert_success_threshold, is_resolved, is_triggered, site_url, site_name,
-              site_logo_url, colors_up, colors_down, colors_degraded, colors_maintenance
+              alert_timestamp, alert_timestamp_utc, alert_cta_url, alert_cta_text, alert_incident_id,
+              alert_incident_url, alert_failure_threshold, alert_success_threshold, is_resolved, is_triggered,
+              site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded, colors_maintenance
             </p>
             <div class="overflow-hidden rounded-md border">
               <Textarea bind:value={trigger.trigger_meta.webhook_body} />
@@ -417,9 +417,9 @@
             </div>
             <p class="text-muted-foreground text-xs">
               Use Mustache variables. Available: alert_id, alert_name, alert_for, alert_value, alert_status,
-              alert_severity, alert_message, alert_source, alert_timestamp, alert_cta_url, alert_cta_text,
-              alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold, is_resolved,
-              is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
+              alert_severity, alert_message, alert_source, alert_timestamp, alert_timestamp_utc, alert_cta_url,
+              alert_cta_text, alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold,
+              is_resolved, is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
               colors_maintenance
             </p>
             <div class="overflow-hidden rounded-md border">
@@ -437,9 +437,9 @@
             </div>
             <p class="text-muted-foreground text-xs">
               Use Mustache variables. Available: alert_id, alert_name, alert_for, alert_value, alert_status,
-              alert_severity, alert_message, alert_source, alert_timestamp, alert_cta_url, alert_cta_text,
-              alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold, is_resolved,
-              is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
+              alert_severity, alert_message, alert_source, alert_timestamp, alert_timestamp_utc, alert_cta_url,
+              alert_cta_text, alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold,
+              is_resolved, is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
               colors_maintenance
             </p>
             <div class="overflow-hidden rounded-md border">
@@ -491,9 +491,9 @@
             </div>
             <p class="text-muted-foreground text-xs">
               Use Mustache variables. Available: alert_id, alert_name, alert_for, alert_value, alert_status,
-              alert_severity, alert_message, alert_source, alert_timestamp, alert_cta_url, alert_cta_text,
-              alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold, is_resolved,
-              is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
+              alert_severity, alert_message, alert_source, alert_timestamp, alert_timestamp_utc, alert_cta_url,
+              alert_cta_text, alert_incident_id, alert_incident_url, alert_failure_threshold, alert_success_threshold,
+              is_resolved, is_triggered, site_url, site_name, site_logo_url, colors_up, colors_down, colors_degraded,
               colors_maintenance
             </p>
             <div class="overflow-hidden rounded-md border">

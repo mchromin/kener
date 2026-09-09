@@ -10,6 +10,7 @@ export interface AlertVariableMap {
   alert_message: string;
   alert_source: string;
   alert_timestamp: string;
+  alert_timestamp_utc: string;
   alert_cta_url: string;
   alert_cta_text: string;
   alert_incident_id?: number;

@@ -2,7 +2,7 @@ import type { MaintenanceEventRecordDetailed, MonitorAlertConfigRecord, MonitorA
 import type { AlertVariableMap, SiteDataForNotification, SubscriptionVariableMap } from "./types.js";
 import GC from "../../global-constants.js";
 import type { SiteDataTransformed } from "../controllers/siteDataController.js";
-import { format } from "date-fns";
+import { FormatUTCDateTime } from "../tool.js";
 import mdToHTML from "../..//marked.js";
 import serverResolver from "../resolver.js";
 
@@ -13,8 +13,11 @@ export function alertToVariables(
   monitorTag?: string,
 ): AlertVariableMap {
   const createdAtDate = alert.created_at instanceof Date ? alert.created_at : new Date(alert.created_at);
+  const updatedAtDate = alert.updated_at instanceof Date ? alert.updated_at : new Date(alert.updated_at);
+  const alertDate = alert.alert_status === GC.RESOLVED ? updatedAtDate : createdAtDate;
   const effectiveMonitorTag = monitorTag || config.monitor_tag || "unknown";
-  const alert_name = `Alert ${effectiveMonitorTag} for ${config.alert_for} ${config.alert_value} ${alert.alert_status} at ${createdAtDate.toISOString()}`;
+  const alertTimestampUTC = FormatUTCDateTime(alertDate);
+  const alert_name = `Alert ${effectiveMonitorTag} for ${config.alert_for} ${config.alert_value} ${alert.alert_status} at ${alertTimestampUTC}`;
 
   return {
     alert_id: alert.id,
@@ -25,7 +28,8 @@ export function alertToVariables(
     alert_severity: config.severity,
     alert_message: config.alert_description || "",
     alert_source: GC.ALERT,
-    alert_timestamp: createdAtDate.toISOString(),
+    alert_timestamp: alertDate.toISOString(),
+    alert_timestamp_utc: alertTimestampUTC,
     alert_cta_url: siteVars.site_url + "monitors/" + effectiveMonitorTag,
     alert_cta_text: "Open Alert Details",
     alert_incident_id: alert.incident_id ? alert.incident_id : undefined,
@@ -54,7 +58,6 @@ function formatMaintenanceMarkdown(
   event: MaintenanceEventRecordDetailed,
   statusMessage: string,
 ): string {
-  const dateFormat = "PPpp";
   let update = `Maintenance **${event.title}** ${statusMessage}\n\n`;
   if (!!event.description) {
     update = update + `${event.description}\n\n`;
@@ -63,8 +66,8 @@ function formatMaintenanceMarkdown(
   update = update + `| Setting | Value |\n`;
   update = update + `| :--- | :--- |\n`;
   update = update + `| **Monitors** | ${monitorNames} |\n`;
-  update = update + `| **Start Time** | ${format(new Date(event.start_date_time * 1000), dateFormat)} |\n`;
-  update = update + `| **End Time** | ${format(new Date(event.end_date_time * 1000), dateFormat)} |\n`;
+  update = update + `| **Start Time (UTC)** | ${FormatUTCDateTime(event.start_date_time)} |\n`;
+  update = update + `| **End Time (UTC)** | ${FormatUTCDateTime(event.end_date_time)} |\n`;
   return mdToHTML(update);
 }
 
