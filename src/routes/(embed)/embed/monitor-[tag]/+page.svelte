@@ -7,6 +7,7 @@
   import type { MonitorBarResponse } from "$lib/server/api-server/monitor-bar/get";
   import { t } from "$lib/stores/i18n";
   import clientResolver from "$lib/client/resolver.js";
+  import { FormatUptime } from "$lib/clientTools.js";
   interface Props {
     data: {
       monitorTag: string;
@@ -27,7 +28,7 @@
   const localTz = $derived(data.localTz || "UTC");
 
   // Display values from API response
-  let displayUptime = $derived(overviewData?.uptime ?? "--");
+  let displayUptime = $derived(overviewData ? FormatUptime(overviewData.uptime) : "--");
   let displayAvgLatency = $derived(overviewData?.avgLatency ?? "--");
   let displayData = $derived(overviewData?.uptimeData ?? []);
 

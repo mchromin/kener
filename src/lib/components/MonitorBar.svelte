@@ -8,7 +8,7 @@
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
   import { formatDate } from "$lib/stores/datetime";
-  import { GetInitials } from "$lib/clientTools.js";
+  import { GetInitials, FormatUptime } from "$lib/clientTools.js";
   import GroupMonitorPopover from "./GroupMonitorPopover.svelte";
   import { t } from "$lib/stores/i18n";
   import { page } from "$app/state";
@@ -55,6 +55,22 @@
     DEGRADED: "stroke-degraded",
     MAINTENANCE: "stroke-maintenance",
     NO_DATA: "stroke-muted-foreground"
+  } as const;
+
+  const STATUS_TEXT = {
+    UP: "text-up",
+    DOWN: "text-down",
+    DEGRADED: "text-degraded",
+    MAINTENANCE: "text-maintenance",
+    NO_DATA: "text-muted-foreground"
+  } as const;
+
+  const STATUS_LABEL = {
+    UP: "Operational",
+    DOWN: "Down",
+    DEGRADED: "Degraded",
+    MAINTENANCE: "Under Maintenance",
+    NO_DATA: "No Status Available"
   } as const;
 </script>
 
@@ -120,14 +136,18 @@
       </Item.Content>
 
       <Item.Content class="order-3 w-full text-left sm:order-0 sm:w-auto sm:flex-none sm:text-center">
-        <Item.Title class="items-start text-2xl">
-          <StatusIcon class="{STATUS_STROKE[data.currentStatus]} {grid ? 'mt-1 size-5' : 'mt-1.5 size-6'}" />
-          <div class="flex flex-col items-start gap-1 sm:items-end">
-            <span class={grid ? "text-base sm:text-lg" : "text-lg sm:text-xl"}>{data.uptime}%</span>
-            <span class="text-muted-foreground text-right text-xs">
-              {data.avgLatency}
-            </span>
-          </div>
+        <Item.Title class="flex-col items-start gap-0.5 sm:items-end">
+          <span
+            class="{STATUS_TEXT[data.currentStatus]} flex items-center gap-1.5 {grid
+              ? 'text-sm sm:text-base'
+              : 'text-base sm:text-lg'} leading-tight font-semibold"
+          >
+            <StatusIcon class="{STATUS_STROKE[data.currentStatus]} {grid ? 'size-4' : 'size-5'} shrink-0" />
+            {$t(STATUS_LABEL[data.currentStatus])}
+          </span>
+          <span class="text-muted-foreground text-left text-xs font-normal sm:text-right">
+            {FormatUptime(data.uptime)}% {$t("Uptime")}{#if data.avgLatency}&nbsp;&middot; {data.avgLatency}{/if}
+          </span>
         </Item.Title>
       </Item.Content>
     </Item.Root>

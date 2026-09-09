@@ -8,6 +8,7 @@
   import { selectedTimezone } from "$lib/stores/timezone";
   import { toZonedTime } from "date-fns-tz";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { FormatUptime } from "$lib/clientTools.js";
 
   interface MinuteData {
     timestamp: number;
@@ -289,9 +290,9 @@
     <p>{$t("Per-Minute Status")}</p>
     <div class="flex items-center gap-1">
       <Tooltip.Root>
-        <Tooltip.Trigger class="flex items-center gap-1">
+        <Tooltip.Trigger class="text-muted-foreground flex items-center gap-1 text-xs font-normal">
           <TrendingUp class="h-3 w-3" />
-          {uptime}%
+          {FormatUptime(uptime)}% {$t("Uptime")}
         </Tooltip.Trigger>
         <Tooltip.Content>
           <p>{$t("Day Uptime")}</p>

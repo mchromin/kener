@@ -371,6 +371,16 @@ function GetInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2);
 }
+
+// ParseUptime keeps up to 4 decimals; the UI only ever shows one.
+function FormatUptime(uptime: string | number | null | undefined): string {
+  if (uptime === null || uptime === undefined || uptime === "") return "-";
+  const value = typeof uptime === "number" ? uptime : parseFloat(uptime);
+  if (isNaN(value)) return String(uptime);
+  // never round a partial uptime up to a perfect 100%
+  const rounded = value < 100 ? Math.min(parseFloat(value.toFixed(1)), 99.9) : parseFloat(value.toFixed(1));
+  return String(rounded);
+}
 export {
   AllRecordTypes,
   ValidateIpAddress,
@@ -383,4 +393,5 @@ export {
   GetStatusBgColor,
   ParseLatency,
   GetInitials,
+  FormatUptime,
 };

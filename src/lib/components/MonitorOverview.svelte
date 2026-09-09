@@ -14,6 +14,7 @@
   import { getEndOfDayAtTz } from "$lib/client/datetime";
   import { formatDate } from "$lib/stores/datetime";
   import { requestMonitorBar, clearMonitorBarCache } from "$lib/client/monitor-bar-client";
+  import { FormatUptime } from "$lib/clientTools.js";
   import * as Popover from "$lib/components/ui/popover/index.js";
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
   import GroupMonitorPopover from "$lib/components/GroupMonitorPopover.svelte";
@@ -59,7 +60,7 @@
   let latencyMetric = $state("average");
 
   // Display values from API response (already formatted as strings)
-  let displayUptime = $derived(overviewData?.uptime ?? "--");
+  let displayUptime = $derived(overviewData ? FormatUptime(overviewData.uptime) : "--");
 
   let displayAvgLatency = $derived(overviewData?.avgLatency ?? "--");
   let displayMaxLatency = $derived(overviewData?.maxLatency ?? "--");
@@ -191,10 +192,7 @@
     {:else if overviewData}
       <!-- Stats Summary -->
       <div class="flex gap-4">
-        <div class="flex flex-1 flex-col items-start gap-1">
-          <p class="text-2xl font-semibold">{displayUptime}%</p>
-          <p class="text-muted-foreground text-sm font-medium">{$t("Uptime")}</p>
-        </div>
+        <p class="text-muted-foreground text-sm font-medium">{displayUptime}% {$t("Uptime")}</p>
       </div>
 
       <!-- Status Bar Calendar -->

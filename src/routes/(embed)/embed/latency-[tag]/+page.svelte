@@ -8,6 +8,7 @@
   import type { TimestampStatusCount } from "$lib/server/types/db";
   import { t } from "$lib/stores/i18n";
   import clientResolver from "$lib/client/resolver.js";
+  import { FormatUptime } from "$lib/clientTools.js";
   interface Props {
     data: {
       monitorTag: string;
@@ -28,7 +29,7 @@
   let error = $state<string | null>(null);
 
   // Display values from API response
-  let displayUptime = $derived(overviewData?.uptime ?? "--");
+  let displayUptime = $derived(overviewData ? FormatUptime(overviewData.uptime) : "--");
   let displayData = $derived(overviewData?.uptimeData ?? []);
   const metricToKeyMap: Record<string, keyof MonitorBarResponse> = {
     average: "avgLatency",
