@@ -1,8 +1,16 @@
-import { GetMinuteStartNowTimestampUTC } from "../tool.js";
+import { GetMinuteStartNowTimestampUTC, Wait } from "../tool.js";
 import GC from "../../global-constants.js";
-import type { GroupMonitor, MonitoringResult } from "../types/monitor.js";
+import type { GroupMonitor, GroupMonitorMember, MonitoringResult } from "../types/monitor.js";
 import { GetLastMonitoringValue } from "../cache/setGet.js";
 import { GetLatestMonitoringData } from "../controllers/controller.js";
+
+const POLL_INTERVAL_MS = 250;
+
+interface MemberSample {
+  timestamp: number;
+  status: string;
+  latency: number;
+}
 
 /**
  * Numeric scores for each status (normalized 0–1).
@@ -32,6 +40,43 @@ class GroupCall {
     this.monitor = monitor;
   }
 
+  /**
+   * Members usually run on the same cron tick as the group, and their results only reach the
+   * cache after a second queue hop, so reading it straight away yields the previous minute's
+   * statuses. Poll until every member has reported for this minute, capped by executionDelay.
+   */
+  private async collectMemberData(
+    members: GroupMonitorMember[],
+    startOfMinute: number,
+  ): Promise<Map<string, MemberSample>> {
+    const budgetMs = Math.max(0, parseInt(String(this.monitor.type_data.executionDelay)) || 1000);
+    const deadline = Date.now() + budgetMs;
+    const statusMap = new Map<string, MemberSample>();
+
+    for (;;) {
+      let stale = 0;
+
+      for (const member of members) {
+        if ((statusMap.get(member.tag)?.timestamp ?? -1) >= startOfMinute) continue;
+
+        const lastObj = await GetLastMonitoringValue(member.tag, () => GetLatestMonitoringData(member.tag));
+        if (lastObj) {
+          statusMap.set(member.tag, {
+            timestamp: lastObj.timestamp,
+            status: lastObj.status ?? "",
+            latency: lastObj.latency ?? 0,
+          });
+        }
+        if ((lastObj?.timestamp ?? -1) < startOfMinute) stale++;
+      }
+
+      // Members on a slower cron than the group never report every minute, so a timeout is
+      // the normal exit here and the last known status is used for them.
+      if (stale === 0 || Date.now() >= deadline) return statusMap;
+      await Wait(POLL_INTERVAL_MS);
+    }
+  }
+
   async execute(startOfMinute?: number): Promise<MonitoringResult> {
     if (!startOfMinute) {
       startOfMinute = GetMinuteStartNowTimestampUTC();
@@ -39,17 +84,7 @@ class GroupCall {
     const members = this.monitor.type_data.monitors;
 
     // Collect each member's latest status + latency
-    const statusMap = new Map<string, { status: string; latency: number }>();
-
-    for (const member of members) {
-      const lastObj = (await GetLastMonitoringValue(member.tag, () => GetLatestMonitoringData(member.tag))) as {
-        status: string;
-        latency: number;
-      } | null;
-      if (lastObj) {
-        statusMap.set(member.tag, lastObj);
-      }
-    }
+    const statusMap = await this.collectMemberData(members, startOfMinute);
 
     // --- Latency calculation ---
     const latencyValues = [...statusMap.values()].map((v) => v.latency);
