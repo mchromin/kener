@@ -12,6 +12,8 @@ let monitorExecuteQueue: Queue | null = null;
 let worker: Worker | null = null;
 const queueName = "monitorExecuteQueue";
 const jobNamePrefix = "monitorExecuteJob";
+// Too low a value staggers checks that share the same cron tick (e.g. members of a GROUP monitor).
+const concurrency = Math.max(1, parseInt(process.env.MONITOR_EXECUTE_CONCURRENCY ?? "") || 50);
 
 interface JobData {
   monitor: MonitorRecordTyped;
@@ -109,89 +111,93 @@ async function manualIncident(monitor: MonitorRecordTyped): Promise<{ [timestamp
 const addWorker = () => {
   if (worker) return worker;
 
-  worker = q.createWorker(getQueue(), async (job: Job): Promise<MonitoringResultTS> => {
-    const { monitor, ts } = job.data as JobData;
-    const serviceClient = new Service(monitor as MonitorWithType);
+  worker = q.createWorker(
+    getQueue(),
+    async (job: Job): Promise<MonitoringResultTS> => {
+      const { monitor, ts } = job.data as JobData;
+      const serviceClient = new Service(monitor as MonitorWithType);
 
-    const exeResult = await serviceClient.execute(ts);
+      const exeResult = await serviceClient.execute(ts);
 
-    let realtimeData: MonitoringResultTS = {};
-    if (exeResult) {
-      realtimeData[ts] = exeResult;
-    }
+      let realtimeData: MonitoringResultTS = {};
+      if (exeResult) {
+        realtimeData[ts] = exeResult;
+      }
 
-    let incidentData: MonitoringResultTS = await manualIncident(monitor);
-    let maintenanceData: MonitoringResultTS = await manualMaintenance(monitor);
-    let defaultData: MonitoringResultTS = {};
-    let mergedData: MonitoringResultTS = {};
+      let incidentData: MonitoringResultTS = await manualIncident(monitor);
+      let maintenanceData: MonitoringResultTS = await manualMaintenance(monitor);
+      let defaultData: MonitoringResultTS = {};
+      let mergedData: MonitoringResultTS = {};
 
-    if (monitor.default_status !== undefined && monitor.default_status !== null) {
-      if (([GC.UP, GC.DOWN, GC.DEGRADED] as string[]).indexOf(monitor.default_status) !== -1) {
-        defaultData[ts] = {
-          status: monitor.default_status,
-          latency: 0,
-          type: GC.DEFAULT_STATUS,
-        };
-        if (monitor.default_status !== GC.UP) {
-          defaultData[ts].error_message = "Default status applied";
+      if (monitor.default_status !== undefined && monitor.default_status !== null) {
+        if (([GC.UP, GC.DOWN, GC.DEGRADED] as string[]).indexOf(monitor.default_status) !== -1) {
+          defaultData[ts] = {
+            status: monitor.default_status,
+            latency: 0,
+            type: GC.DEFAULT_STATUS,
+          };
+          if (monitor.default_status !== GC.UP) {
+            defaultData[ts].error_message = "Default status applied";
+          }
         }
       }
-    }
 
-    // Merge data: later entries override earlier ones for all fields except error_message
-    // Special-case: if realtime returns NO_DATA but a default status exists, prefer default status.
-    const defaultStatus = defaultData[ts]?.status;
-    const realtimeStatus = realtimeData[ts]?.status;
-    let realtimeDataForMerge = realtimeData;
-    if (defaultStatus && realtimeStatus === GC.NO_DATA) {
-      // Apply the preference *before* merging so incident/maintenance can still override later.
-      // Also avoid carrying over realtime NO_DATA error_message.
-      realtimeDataForMerge = { ...realtimeData };
-      realtimeDataForMerge[ts] = {
-        ...realtimeDataForMerge[ts],
-        status: defaultStatus,
-        type: GC.DEFAULT_STATUS,
-      };
-      delete realtimeDataForMerge[ts].error_message;
-    }
-
-    mergedData = { ...defaultData, ...realtimeDataForMerge, ...incidentData, ...maintenanceData };
-
-    // Preserve error_message with cascading priority:
-    // default → realtime → incident → maintenance
-    // Each level only overrides if it has its own error_message
-    for (const timestamp in mergedData) {
-      const ts = parseInt(timestamp);
-      let errorMessage: string | undefined = defaultData[ts]?.error_message;
-      if (realtimeData[ts]?.error_message) {
-        errorMessage = realtimeData[ts].error_message;
+      // Merge data: later entries override earlier ones for all fields except error_message
+      // Special-case: if realtime returns NO_DATA but a default status exists, prefer default status.
+      const defaultStatus = defaultData[ts]?.status;
+      const realtimeStatus = realtimeData[ts]?.status;
+      let realtimeDataForMerge = realtimeData;
+      if (defaultStatus && realtimeStatus === GC.NO_DATA) {
+        // Apply the preference *before* merging so incident/maintenance can still override later.
+        // Also avoid carrying over realtime NO_DATA error_message.
+        realtimeDataForMerge = { ...realtimeData };
+        realtimeDataForMerge[ts] = {
+          ...realtimeDataForMerge[ts],
+          status: defaultStatus,
+          type: GC.DEFAULT_STATUS,
+        };
+        delete realtimeDataForMerge[ts].error_message;
       }
-      if (incidentData[ts]?.error_message) {
-        errorMessage = incidentData[ts].error_message;
-      }
-      if (maintenanceData[ts]?.error_message) {
-        errorMessage = maintenanceData[ts].error_message;
-      }
-      if (errorMessage) {
-        mergedData[ts].error_message = errorMessage;
-      }
-    }
 
-    // Preserve latency from realtime monitoring
-    // Incident/maintenance override status but should keep the actual latency from monitoring
-    for (const timestamp in mergedData) {
-      const ts = parseInt(timestamp);
-      if (realtimeData[ts]?.latency !== undefined && realtimeData[ts].latency > 0) {
-        mergedData[ts].latency = realtimeData[ts].latency;
+      mergedData = { ...defaultData, ...realtimeDataForMerge, ...incidentData, ...maintenanceData };
+
+      // Preserve error_message with cascading priority:
+      // default → realtime → incident → maintenance
+      // Each level only overrides if it has its own error_message
+      for (const timestamp in mergedData) {
+        const ts = parseInt(timestamp);
+        let errorMessage: string | undefined = defaultData[ts]?.error_message;
+        if (realtimeData[ts]?.error_message) {
+          errorMessage = realtimeData[ts].error_message;
+        }
+        if (incidentData[ts]?.error_message) {
+          errorMessage = incidentData[ts].error_message;
+        }
+        if (maintenanceData[ts]?.error_message) {
+          errorMessage = maintenanceData[ts].error_message;
+        }
+        if (errorMessage) {
+          mergedData[ts].error_message = errorMessage;
+        }
       }
-    }
 
-    for (const timestamp in mergedData) {
-      monitorResponseQueue.push(monitor.tag, parseInt(timestamp), mergedData[timestamp]);
-    }
+      // Preserve latency from realtime monitoring
+      // Incident/maintenance override status but should keep the actual latency from monitoring
+      for (const timestamp in mergedData) {
+        const ts = parseInt(timestamp);
+        if (realtimeData[ts]?.latency !== undefined && realtimeData[ts].latency > 0) {
+          mergedData[ts].latency = realtimeData[ts].latency;
+        }
+      }
 
-    return mergedData;
-  });
+      for (const timestamp in mergedData) {
+        monitorResponseQueue.push(monitor.tag, parseInt(timestamp), mergedData[timestamp]);
+      }
+
+      return mergedData;
+    },
+    { concurrency },
+  );
 
   worker.on("completed", (job: Job, returnvalue: any) => {
     // const { monitor, ts } = job.data as JobData;
