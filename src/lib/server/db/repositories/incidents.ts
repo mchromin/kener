@@ -313,7 +313,8 @@ export class IncidentsRepository extends BaseRepository {
       .andWhere("i.start_date_time", "<=", timestamp)
       .andWhere("i.status", "OPEN")
       .andWhere("i.incident_type", "INCIDENT")
-      .andWhere("i.state", "!=", "RESOLVED")
+      // MONITORING means the fix is in place and the real monitor result should show through again.
+      .whereNotIn("i.state", [GC.MONITORING, GC.RESOLVED])
       .andWhere("i.incident_source", "!=", "ALERT");
   }
 
