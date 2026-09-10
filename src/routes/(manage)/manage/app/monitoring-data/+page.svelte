@@ -4,12 +4,15 @@
   import { Badge } from "$lib/components/ui/badge/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
-  import * as Select from "$lib/components/ui/select/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
+  import * as Command from "$lib/components/ui/command/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import SearchIcon from "@lucide/svelte/icons/search";
   import TrashIcon from "@lucide/svelte/icons/trash";
   import FilterIcon from "@lucide/svelte/icons/filter";
@@ -68,6 +71,7 @@
   let pageNo = $state(1);
   let showFilters = $state(false);
   let monitorTagFilter = $state("ALL");
+  let monitorPickerOpen = $state(false);
   let startDateTime = $state(formatDateTimeForInput(yesterday));
   let endDateTime = $state(formatDateTimeForInput(now));
   const limit = 50;
@@ -239,6 +243,7 @@
     if (value) {
       monitorTagFilter = value;
     }
+    monitorPickerOpen = false;
   }
 
   // Pagination
@@ -292,17 +297,40 @@
         </div>
         <div class="flex flex-col gap-1">
           <span class="text-muted-foreground text-xs font-medium">Monitor</span>
-          <Select.Root type="single" value={monitorTagFilter} onValueChange={handleMonitorChange}>
-            <Select.Trigger class="w-48">
-              {monitorTagFilter === "ALL" ? "All Monitors" : monitorTagFilter}
-            </Select.Trigger>
-            <Select.Content>
-              <Select.Item value="ALL">All Monitors</Select.Item>
-              {#each monitors as monitor (monitor.tag)}
-                <Select.Item value={monitor.tag}>{monitor.name || monitor.tag}</Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
+          <Popover.Root bind:open={monitorPickerOpen}>
+            <Popover.Trigger>
+              {#snippet child({ props })}
+                <Button {...props} variant="outline" role="combobox" class="w-48 justify-between font-normal">
+                  <span class="truncate">{monitorTagFilter === "ALL" ? "All Monitors" : monitorTagFilter}</span>
+                  <ChevronsUpDownIcon class="text-muted-foreground size-4 shrink-0" />
+                </Button>
+              {/snippet}
+            </Popover.Trigger>
+            <Popover.Content class="w-[var(--bits-popover-trigger-width)] p-0" align="start">
+              <Command.Root>
+                <Command.Input placeholder="Filter monitors..." />
+                <Command.List>
+                  <Command.Empty>No monitors found.</Command.Empty>
+                  <Command.Group>
+                    <Command.Item value="All Monitors" onSelect={() => handleMonitorChange("ALL")}>
+                      <CheckIcon class="size-4 {monitorTagFilter === 'ALL' ? 'opacity-100' : 'opacity-0'}" />
+                      All Monitors
+                    </Command.Item>
+                    {#each monitors as monitor (monitor.tag)}
+                      <Command.Item
+                        value={monitor.name || monitor.tag}
+                        keywords={[monitor.tag]}
+                        onSelect={() => handleMonitorChange(monitor.tag)}
+                      >
+                        <CheckIcon class="size-4 {monitorTagFilter === monitor.tag ? 'opacity-100' : 'opacity-0'}" />
+                        {monitor.name || monitor.tag}
+                      </Command.Item>
+                    {/each}
+                  </Command.Group>
+                </Command.List>
+              </Command.Root>
+            </Popover.Content>
+          </Popover.Root>
         </div>
         <Button size="sm" onclick={applyFilters}>
           <SearchIcon class="size-4" />

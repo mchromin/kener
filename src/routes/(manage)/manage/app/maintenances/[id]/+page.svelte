@@ -100,6 +100,13 @@
   }
   let availableMonitors = $state<MonitorRecord[]>([]);
   let selectedMonitors = $state<SelectedMonitor[]>([]);
+  let monitorFilter = $state("");
+
+  const filteredMonitors = $derived.by(() => {
+    const q = monitorFilter.trim().toLowerCase();
+    if (!q) return availableMonitors;
+    return availableMonitors.filter((m) => m.name.toLowerCase().includes(q) || m.tag.toLowerCase().includes(q));
+  });
 
   // Derived for backward compatibility
   const selectedMonitorTags = $derived(selectedMonitors.map((m) => m.tag));
@@ -703,8 +710,13 @@
           <!-- Available monitors to add -->
           <div class="rounded-md border p-3">
             <Label class="text-muted-foreground mb-2 block text-xs">Select monitors to add:</Label>
+            <Input
+              bind:value={monitorFilter}
+              placeholder="Filter monitors by name or tag..."
+              class="mb-2 h-8 text-sm"
+            />
             <div class="grid max-h-32 grid-cols-2 gap-2 overflow-y-auto">
-              {#each availableMonitors as monitor}
+              {#each filteredMonitors as monitor}
                 <div class="flex items-center gap-2">
                   <Checkbox
                     id="monitor-{monitor.tag}"
@@ -716,8 +728,10 @@
                   </Label>
                 </div>
               {/each}
-              {#if availableMonitors.length === 0}
-                <p class="text-muted-foreground col-span-2 text-sm">No monitors available</p>
+              {#if filteredMonitors.length === 0}
+                <p class="text-muted-foreground col-span-2 text-sm">
+                  {availableMonitors.length === 0 ? "No monitors available" : "No monitors match the filter"}
+                </p>
               {/if}
             </div>
           </div>

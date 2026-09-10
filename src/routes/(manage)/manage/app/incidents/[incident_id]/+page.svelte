@@ -8,6 +8,7 @@
   import { Switch } from "$lib/components/ui/switch/index.js";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
+  import * as Command from "$lib/components/ui/command/index.js";
   import * as Breadcrumb from "$lib/components/ui/breadcrumb/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
@@ -856,22 +857,26 @@
                 <div class="space-y-4 py-4">
                   <div class="flex flex-col gap-2">
                     <Label>Monitor</Label>
-                    <Select.Root
-                      type="single"
-                      value={selectedMonitorTag}
-                      onValueChange={(v) => {
-                        if (v) selectedMonitorTag = v;
-                      }}
-                    >
-                      <Select.Trigger class="w-full">
-                        {selectedMonitorTag ? getMonitorName(selectedMonitorTag) : "Select a monitor"}
-                      </Select.Trigger>
-                      <Select.Content>
-                        {#each unassignedMonitors as monitor}
-                          <Select.Item value={monitor.tag}>{monitor.name}</Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
+                    <Command.Root class="rounded-md border">
+                      <Command.Input placeholder="Filter monitors by name or tag..." />
+                      <Command.List class="max-h-48">
+                        <Command.Empty>No monitors found.</Command.Empty>
+                        <Command.Group>
+                          {#each unassignedMonitors as monitor (monitor.tag)}
+                            <Command.Item
+                              value={monitor.tag}
+                              keywords={[monitor.name]}
+                              onSelect={() => (selectedMonitorTag = monitor.tag)}
+                            >
+                              <CheckIcon
+                                class="size-4 {selectedMonitorTag === monitor.tag ? 'opacity-100' : 'opacity-0'}"
+                              />
+                              {monitor.name}
+                            </Command.Item>
+                          {/each}
+                        </Command.Group>
+                      </Command.List>
+                    </Command.Root>
                   </div>
                   <div class="flex flex-col gap-2">
                     <Label>Impact Level</Label>
