@@ -64,7 +64,8 @@
     page_title: "",
     page_header: "",
     page_subheader: "",
-    page_logo: ""
+    page_logo: "",
+    is_admin_only: GC.NO as string
   });
 
   // Monitor selection
@@ -120,7 +121,8 @@
           page_title: foundPage.page_title,
           page_header: foundPage.page_header,
           page_subheader: foundPage.page_subheader || "",
-          page_logo: foundPage.page_logo || ""
+          page_logo: foundPage.page_logo || "",
+          is_admin_only: foundPage.is_admin_only || GC.NO
         };
         selectedMonitors = foundPage.monitors?.map((m: { monitor_tag: string }) => m.monitor_tag) || [];
         // Load page settings with defaults
@@ -182,7 +184,8 @@
         page_title: formData.page_title,
         page_header: formData.page_header,
         page_subheader: formData.page_subheader || null,
-        page_logo: formData.page_logo || null
+        page_logo: formData.page_logo || null,
+        is_admin_only: formData.is_admin_only
       };
 
       if (!isNew && currentPage) {
@@ -660,6 +663,21 @@
               <p class="text-muted-foreground text-xs">Optional logo for this page (max 256x256px)</p>
             </div>
           </div>
+        </div>
+
+        <!-- Admin only -->
+        <div class="flex items-center justify-between gap-4 rounded-lg border p-4">
+          <div class="space-y-1">
+            <Label for="page-admin-only">Admin only</Label>
+            <p class="text-muted-foreground text-xs">
+              Hide this page from the page switcher and block direct access for visitors who are not logged in.
+            </p>
+          </div>
+          <Switch
+            id="page-admin-only"
+            checked={formData.is_admin_only === GC.YES}
+            onCheckedChange={(checked) => (formData.is_admin_only = checked ? GC.YES : GC.NO)}
+          />
         </div>
       </Card.Content>
       <Card.Footer class="flex justify-end">

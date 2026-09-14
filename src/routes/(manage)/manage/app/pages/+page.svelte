@@ -99,7 +99,12 @@
                     </Avatar.Fallback>
                   </Avatar.Root>
                   <div class="min-w-0">
-                    <div class="font-medium">{page.page_title}</div>
+                    <div class="flex items-center gap-2 font-medium">
+                      {page.page_title}
+                      {#if page.is_admin_only === "YES"}
+                        <Badge variant="outline" class="text-muted-foreground">Admin only</Badge>
+                      {/if}
+                    </div>
                     <p class="text-muted-foreground line-clamp-2 text-xs">{page.page_header}</p>
                   </div>
                 </div>

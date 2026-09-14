@@ -314,6 +314,9 @@ export const GetPageDashboardData = async (
   if (!pageData) {
     return null;
   }
+  if (pageData.page.is_admin_only === "YES" && !layoutData.loggedInUser) {
+    return null;
+  }
 
   const { page: pageDetails, monitors: pageMonitors } = pageData;
   const monitorTags = pageMonitors.map((pm) => pm.monitor_tag);

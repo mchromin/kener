@@ -450,6 +450,7 @@ export interface PageRecord {
   page_subheader: string | null;
   page_logo: string | null;
   page_settings_json: string | null;
+  is_admin_only: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -461,6 +462,7 @@ export interface PageRecordInsert {
   page_subheader?: string | null;
   page_logo?: string | null;
   page_settings_json?: string | null;
+  is_admin_only?: string;
 }
 
 export interface PageSettingsType {

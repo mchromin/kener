@@ -17,6 +17,7 @@ export class PagesRepository extends BaseRepository {
       page_subheader: data.page_subheader,
       page_logo: data.page_logo,
       page_settings_json: data.page_settings_json,
+      is_admin_only: data.is_admin_only || "NO",
       created_at: this.knex.fn.now(),
       updated_at: this.knex.fn.now(),
     };

@@ -2,16 +2,19 @@ import { json } from "@sveltejs/kit";
 import type { APIServerRequest } from "$lib/server/types/api-server";
 import { GetAllPages } from "$lib/server/controllers/pagesController";
 import { GetSiteDataByKey } from "$lib/server/controllers/siteDataController";
+import { GetLoggedInSession } from "$lib/server/controllers/userController";
 import type { PageNavItem } from "$lib/server/controllers/dashboardController";
 import type { PageOrderingSettings } from "$lib/types/site";
 
 /**
  * GET /dashboard-apis/pages
  * Returns all pages as PageNavItem[] (page_title, page_path)
+ * Admin-only pages are included only for logged-in users.
  * Respects pageOrderingSettings if enabled
  */
-export default async function get(_req: APIServerRequest): Promise<Response> {
-  const allPagesData = await GetAllPages();
+export default async function get(req: APIServerRequest): Promise<Response> {
+  const loggedInUser = await GetLoggedInSession(req.cookies);
+  const allPagesData = (await GetAllPages()).filter((p) => !!loggedInUser || p.is_admin_only !== "YES");
   const pageOrderingSettings = (await GetSiteDataByKey("pageOrderingSettings")) as PageOrderingSettings | null;
 
   let orderedPages = allPagesData;
