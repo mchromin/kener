@@ -5,13 +5,13 @@
  * Mapping from actions → permissions:
  *
  * monitors.read      → getMonitors, getMonitoringDataPaginated
- * monitors.write     → storeMonitorData, updateMonitoringData, deleteMonitor, deleteMonitorData, cloneMonitor, testMonitor
+ * monitors.write     → storeMonitorData, updateMonitoringData, deleteMonitor, deleteMonitorData, cloneMonitor, testMonitor, listDockerContainers
  *
  * incidents.read     → getIncidents, getIncident, getComments
  * incidents.write    → createIncident, updateIncident, deleteIncident, addMonitor, removeMonitor, addComment, deleteComment, updateComment
  *
  * maintenances.read  → getMaintenances, getMaintenance, getMaintenanceEvents, getMaintenanceEvent, getMaintenanceMonitors
- * maintenances.write → createMaintenance, updateMaintenance, deleteMaintenance, createMaintenanceEvent, updateMaintenanceEvent, deleteMaintenanceEvent, addMonitorToMaintenance, removeMonitorFromMaintenance, updateMaintenanceMonitorImpact
+ * maintenances.write → createMaintenance, updateMaintenance, deleteMaintenance, createMaintenanceEvent, updateMaintenanceEvent, updateMaintenanceEventStatus, deleteMaintenanceEvent, addMonitorToMaintenance, removeMonitorFromMaintenance, updateMaintenanceMonitorImpact
  *
  * pages.read         → getPages
  * pages.write        → createPage, updatePage, deletePage, addMonitorToPage, removeMonitorFromPage, reorderPageMonitors
@@ -124,6 +124,7 @@ export const ACTION_PERMISSION_MAP: Record<string, string | null> = {
   deleteMonitorData: "monitors.write",
   cloneMonitor: "monitors.write",
   testMonitor: "monitors.write",
+  listDockerContainers: "monitors.write",
 
   // Incidents
   getIncidents: "incidents.read",
@@ -149,6 +150,7 @@ export const ACTION_PERMISSION_MAP: Record<string, string | null> = {
   deleteMaintenance: "maintenances.write",
   createMaintenanceEvent: "maintenances.write",
   updateMaintenanceEvent: "maintenances.write",
+  updateMaintenanceEventStatus: "maintenances.write",
   deleteMaintenanceEvent: "maintenances.write",
   addMonitorToMaintenance: "maintenances.write",
   removeMonitorFromMaintenance: "maintenances.write",
@@ -220,6 +222,13 @@ export const ACTION_PERMISSION_MAP: Record<string, string | null> = {
   updateRolePermissions: "roles.assign_permissions",
   addUserToRole: "roles.assign_users",
   removeUserFromRole: "roles.assign_users",
+
+  // OIDC
+  getOidcGroupRoleMappings: "settings.read",
+  upsertOidcGroupRoleMapping: "settings.write",
+  deleteOidcGroupRoleMapping: "settings.write",
+  testOidcConnection: "settings.write",
+  getOidcSettingsMasked: "settings.read",
 };
 
 export const ROUTE_PERMISSION_MAP: Record<string, string | null> = {
@@ -260,6 +269,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, string | null> = {
   "/(manage)/manage/app/customizations": "settings.read",
   "/(manage)/manage/app/internationalization": "settings.read",
   "/(manage)/manage/app/analytics-providers": "settings.read",
+  "/(manage)/manage/app/captcha-providers": "settings.read",
   "/(manage)/manage/app/badges": "settings.read",
   "/(manage)/manage/app/embed": "settings.read",
 
@@ -271,4 +281,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, string | null> = {
 
   // Roles
   "/(manage)/manage/app/roles": "roles.read",
+
+  // OIDC
+  "/(manage)/manage/app/oidc": "settings.read",
 };

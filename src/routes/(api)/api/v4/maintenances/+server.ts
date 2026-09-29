@@ -8,22 +8,15 @@ import type {
   BadRequestResponse,
   MaintenanceMonitor,
 } from "$lib/types/api";
-import { GetMinuteStartTimestampUTC } from "$lib/server/tool";
+import { GetMinuteStartTimestampUTC, parseDbTimestamp } from "$lib/server/tool";
 import {
   CreateMaintenance,
   GenerateMaintenanceEvents,
   isOneTimeRrule,
 } from "$lib/server/controllers/maintenanceController";
+import { GetSiteURL } from "$lib/server/controllers/siteDataController";
+import serverResolver from "$lib/server/resolver";
 import { rrulestr } from "rrule";
-
-function formatDateToISO(date: Date | string): string {
-  if (date instanceof Date) {
-    return date.toISOString();
-  }
-  // Handle string dates (e.g., from SQLite: "2026-01-27 16:07:19")
-  const parsed = new Date(date.replace(" ", "T") + "Z");
-  return parsed.toISOString();
-}
 
 function isValidRrule(rrule: string): boolean {
   try {
@@ -67,6 +60,7 @@ export const GET: RequestHandler = async ({ url }) => {
   }
 
   // Build response with monitors for each maintenance
+  const siteUrl = await GetSiteURL();
   const maintenances: MaintenanceResponse[] = [];
   for (const maintenance of rawMaintenances) {
     const monitors = await db.getMaintenanceMonitors(maintenance.id);
@@ -82,8 +76,9 @@ export const GET: RequestHandler = async ({ url }) => {
         monitor_tag: m.monitor_tag,
         impact: m.monitor_impact as "UP" | "DOWN" | "DEGRADED" | "MAINTENANCE",
       })),
-      created_at: formatDateToISO(maintenance.created_at),
-      updated_at: formatDateToISO(maintenance.updated_at),
+      created_at: parseDbTimestamp(maintenance.created_at).toISOString(),
+      updated_at: parseDbTimestamp(maintenance.updated_at).toISOString(),
+      url: siteUrl + serverResolver(`/maintenances/${maintenance.id}?type=maintenance`),
     });
   }
 
@@ -265,8 +260,9 @@ export const POST: RequestHandler = async ({ request }) => {
       monitor_tag: m.monitor_tag,
       impact: m.monitor_impact as "UP" | "DOWN" | "DEGRADED" | "MAINTENANCE",
     })),
-    created_at: formatDateToISO(maintenance.created_at),
-    updated_at: formatDateToISO(maintenance.updated_at),
+    created_at: parseDbTimestamp(maintenance.created_at).toISOString(),
+    updated_at: parseDbTimestamp(maintenance.updated_at).toISOString(),
+    url: (await GetSiteURL()) + serverResolver(`/maintenances/${maintenance.id}?type=maintenance`),
   };
 
   const response: CreateMaintenanceResponse = {

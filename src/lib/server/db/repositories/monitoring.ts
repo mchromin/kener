@@ -1,6 +1,7 @@
 import type { Knex as KnexType } from "knex";
 import { BaseRepository } from "./base.js";
 import GC from "../../../global-constants.js";
+import type { MonitoringStatus } from "../../../types/status.js";
 import { GetMinuteStartNowTimestampUTC } from "../../tool.js";
 import type {
   MonitoringData,
@@ -11,25 +12,41 @@ import type {
 } from "../../types/db.js";
 
 /**
- * Data types produced by an actual monitor check. These are the only types that
- * should be considered when evaluating alert conditions. Overlay types such as
- * MAINTENANCE, INCIDENT, MANUAL, SIGNAL and DEFAULT are excluded because they do
- * not represent a real probe result.
+ * Sample types alert evaluation can see (see docs/adr/0005-alerts-evaluate-alert-visible-samples.md).
+ * Exactly the types written by flows that enqueue alert evaluation: scheduler checks
+ * (REALTIME/ERROR/TIMEOUT), default-status fill (DEFAULT_STATUS), and data-API pushes (MANUAL).
+ * SIGNAL rows (raw heartbeat receipts) and INCIDENT/MAINTENANCE overlays stay invisible, so the
+ * alert window freezes during manual overlays instead of triggering or resolving on them.
  */
-const REAL_CHECK_TYPES = [GC.REALTIME, GC.TIMEOUT, GC.ERROR];
+const ALERT_VISIBLE_TYPES = [GC.REALTIME, GC.ERROR, GC.TIMEOUT, GC.MANUAL, GC.DEFAULT_STATUS];
+
+/**
+ * Scheduled-check sample types that count toward a monitor's Confirmation Threshold
+ * (issue #712). Intentionally narrower than ALERT_VISIBLE_TYPES: MANUAL pushes
+ * and DEFAULT_STATUS fill stay transparent to threshold counting.
+ */
+const OBSERVED_CHECK_TYPES = [GC.REALTIME, GC.TIMEOUT, GC.ERROR];
+
+/**
+ * Overlay sample types that FREEZE Confirmation Threshold counting (issue #712):
+ * while one is active the count does not advance, and it acts as a hard boundary the
+ * pending run cannot cross. Included in the confirmation lookback (unlike MANUAL/DEFAULT,
+ * which stay transparent) so the resolver can detect the boundary.
+ */
+const OVERLAY_TYPES = [GC.INCIDENT, GC.MAINTENANCE];
 
 /**
  * Repository for monitoring data operations
  */
 export class MonitoringRepository extends BaseRepository {
   async insertMonitoringData(data: MonitoringDataInsert): Promise<MonitoringData | null> {
-    const { monitor_tag, timestamp, status, latency, type, error_message } = data;
+    const { monitor_tag, timestamp, status, latency, type, error_message, raw_status } = data;
 
     // Perform insert/update - works across PostgreSQL, MySQL, and SQLite
     await this.knex("monitoring_data")
-      .insert({ monitor_tag, timestamp, status, latency, type, error_message })
+      .insert({ monitor_tag, timestamp, status, latency, type, error_message, raw_status })
       .onConflict(["monitor_tag", "timestamp"])
-      .merge({ status, latency, type, error_message });
+      .merge({ status, latency, type, error_message, raw_status });
 
     // Query and return the inserted/updated record (works consistently across all databases)
     const record = await this.knex("monitoring_data")
@@ -45,27 +62,6 @@ export class MonitoringRepository extends BaseRepository {
       .where("monitor_tag", monitor_tag)
       .where("timestamp", ">=", start)
       .where("timestamp", "<", end)
-      .orderBy("timestamp", "asc");
-  }
-
-  // Groups by timestamp and applies priority: DOWN > DEGRADED > UP
-  async getMonitoringDataAll(monitor_tags: string[], start: number, end: number): Promise<MonitoringData[]> {
-    return await this.knex("monitoring_data")
-      .select(
-        "timestamp",
-        this.knex.raw(`
-          CASE 
-            WHEN MAX(CASE WHEN status = 'DOWN' THEN 1 ELSE 0 END) = 1 THEN 'DOWN'
-            WHEN MAX(CASE WHEN status = 'DEGRADED' THEN 1 ELSE 0 END) = 1 THEN 'DEGRADED'
-            ELSE 'UP'
-          END as status
-        `),
-      )
-      .whereIn("monitor_tag", monitor_tags)
-      .where("timestamp", ">=", start)
-      .where("timestamp", "<=", end)
-      .whereNotNull("status")
-      .groupBy("timestamp")
       .orderBy("timestamp", "asc");
   }
 
@@ -87,12 +83,16 @@ export class MonitoringRepository extends BaseRepository {
   async getMonitoringDataPaginated(
     page: number,
     limit: number,
-    filter?: { monitor_tag?: string; start_time?: number; end_time?: number },
+    filter?: { monitor_tag?: string; status?: MonitoringStatus; start_time?: number; end_time?: number },
   ): Promise<MonitoringData[]> {
     let query = this.knex("monitoring_data").select("*");
 
     if (filter?.monitor_tag) {
       query = query.where("monitor_tag", filter.monitor_tag);
+    }
+
+    if (filter?.status) {
+      query = query.where("status", filter.status);
     }
 
     if (filter?.start_time) {
@@ -111,6 +111,7 @@ export class MonitoringRepository extends BaseRepository {
 
   async getMonitoringDataCount(filter?: {
     monitor_tag?: string;
+    status?: MonitoringStatus;
     start_time?: number;
     end_time?: number;
   }): Promise<{ count: number }> {
@@ -118,6 +119,10 @@ export class MonitoringRepository extends BaseRepository {
 
     if (filter?.monitor_tag) {
       query = query.where("monitor_tag", filter.monitor_tag);
+    }
+
+    if (filter?.status) {
+      query = query.where("status", filter.status);
     }
 
     if (filter?.start_time) {
@@ -146,22 +151,21 @@ export class MonitoringRepository extends BaseRepository {
       return [];
     }
 
-    const latestPerMonitor = this.knex("monitoring_data")
-      .select("monitor_tag")
-      .max("timestamp as max_timestamp")
-      .whereIn("monitor_tag", monitor_tags)
-      .groupBy("monitor_tag")
-      .as("latest_per_monitor");
-
-    return await this.knex("monitoring_data as md")
-      .join(latestPerMonitor, function (this: KnexType.JoinClause) {
-        this.on("md.monitor_tag", "=", "latest_per_monitor.monitor_tag").andOn(
-          "md.timestamp",
-          "=",
-          "latest_per_monitor.max_timestamp",
-        );
-      })
-      .select("md.*");
+    // One newest-row lookup per unique tag — each a single descent of the
+    // (monitor_tag, timestamp) primary key. The previous MAX(timestamp)
+    // GROUP BY self-join planned as a full-table scan on large
+    // monitoring_data tables (Postgres), holding a pool connection for
+    // hundreds of ms per page load and exhausting the web pool under load.
+    // Lookups run in small batches so a page with many monitors cannot queue
+    // more connection acquisitions than the pool can serve at once.
+    const uniqueTags = [...new Set(monitor_tags)];
+    const batchSize = 10;
+    const rows: (MonitoringData | undefined)[] = [];
+    for (let i = 0; i < uniqueTags.length; i += batchSize) {
+      const batch = uniqueTags.slice(i, i + batchSize);
+      rows.push(...(await Promise.all(batch.map((tag) => this.getLatestMonitoringData(tag)))));
+    }
+    return rows.filter((row): row is MonitoringData => row !== undefined);
   }
 
   async getLastHeartbeat(monitor_tag: string): Promise<MonitoringData | undefined> {
@@ -270,7 +274,7 @@ export class MonitoringRepository extends BaseRepository {
         qb.select("*")
           .from("monitoring_data")
           .where("monitor_tag", monitor_tag)
-          .whereIn("type", REAL_CHECK_TYPES)
+          .whereIn("type", ALERT_VISIBLE_TYPES)
           .orderBy("timestamp", "desc")
           .limit(lastX);
       })
@@ -296,7 +300,7 @@ export class MonitoringRepository extends BaseRepository {
         qb.select("*")
           .from("monitoring_data")
           .where("monitor_tag", monitor_tag)
-          .whereIn("type", REAL_CHECK_TYPES)
+          .whereIn("type", ALERT_VISIBLE_TYPES)
           .orderBy("timestamp", "desc")
           .limit(lastX);
       })
@@ -318,7 +322,7 @@ export class MonitoringRepository extends BaseRepository {
         qb.select("*")
           .from("monitoring_data")
           .where("monitor_tag", monitor_tag)
-          .whereIn("type", REAL_CHECK_TYPES)
+          .whereIn("type", ALERT_VISIBLE_TYPES)
           .orderBy("timestamp", "desc")
           .limit(lastX);
       })
@@ -332,6 +336,107 @@ export class MonitoringRepository extends BaseRepository {
       .first();
 
     return result.is_recovered === 1;
+  }
+
+  /**
+   * Recent samples the Confirmation Threshold resolver needs, newest first: scheduled-check
+   * observations (REALTIME/TIMEOUT/ERROR) plus incident/maintenance overlays. MANUAL pushes
+   * and DEFAULT fill are excluded — they stay transparent to the counter. Returns `type` so
+   * the resolver can stop at overlay rows (freeze). Observations whose status is NO_DATA are
+   * excluded entirely (neutral — they neither advance nor reset the count and must not consume lookback slots).
+   */
+  async getRecentSamplesForConfirmation(
+    monitor_tag: string,
+    beforeTs: number,
+    limit: number,
+  ): Promise<Array<{ timestamp: number; status: string | null; raw_status: string | null; type: string | null }>> {
+    return await this.knex("monitoring_data")
+      .select("timestamp", "status", "raw_status", "type")
+      .where("monitor_tag", monitor_tag)
+      .where("timestamp", "<", beforeTs)
+      .whereIn("type", [...OBSERVED_CHECK_TYPES, ...OVERLAY_TYPES])
+      .whereNot("status", GC.NO_DATA)
+      .orderBy("timestamp", "desc")
+      .limit(limit);
+  }
+
+  /**
+   * The committed status of the most recent real scheduled-check observation before `beforeTs`
+   * — the Confirmation Threshold "anchor" (the side currently shown). Looks past overlays,
+   * MANUAL/DEFAULT, and NO_DATA so a long incident/maintenance window can never hide the anchor
+   * (issue #712). Returns null when there is no prior observation (cold start).
+   */
+  async getLastObservedStatus(monitor_tag: string, beforeTs: number): Promise<string | null> {
+    const row = await this.knex("monitoring_data")
+      .select("status")
+      .where("monitor_tag", monitor_tag)
+      .where("timestamp", "<", beforeTs)
+      .whereIn("type", OBSERVED_CHECK_TYPES)
+      .whereNot("status", GC.NO_DATA)
+      .orderBy("timestamp", "desc")
+      .limit(1)
+      .first();
+    return row ? (row.status ?? null) : null;
+  }
+
+  /**
+   * Backfill a confirmed status flip: set each row's committed status to its observed raw_status.
+   * `confirmThreshold` is the number of consecutive checks that confirmed the flip — when it is a
+   * number the run resolved to an unhealthy side and a per-row note ("Down"/"Degraded confirmed
+   * after N consecutive checks", matching each row's own severity) is appended to the existing
+   * error text; when it is null the run resolved to UP (recovery) and the error text is cleared.
+   */
+  async backfillConfirmedStatus(
+    monitor_tag: string,
+    timestamps: number[],
+    confirmThreshold: number | null,
+  ): Promise<number> {
+    if (timestamps.length === 0) return 0;
+
+    // Recovery (confirmed UP): rows become the UP side — clear any held error text in one update.
+    if (confirmThreshold === null) {
+      return await this.knex("monitoring_data")
+        .where("monitor_tag", monitor_tag)
+        .whereIn("timestamp", timestamps)
+        .whereNotNull("raw_status")
+        .update({
+          status: this.knex.ref("raw_status"),
+          error_message: null,
+        });
+    }
+
+    // Confirmed unhealthy: set each row's status from its observed raw_status and APPEND a
+    // severity-matched confirmation note to the existing error text (preserving the observed
+    // failure reason). Done per-row for portable string concatenation (|| vs CONCAT differ across
+    // SQLite/PG/MySQL), per-row severity wording, and idempotency if the backfill is replayed.
+    // The whole read+update window runs in one transaction — a confirmation flip is one logical
+    // write, so it must not leave the window half-confirmed/half-held if a row update fails.
+    return await this.knex.transaction(async (trx: KnexType.Transaction) => {
+      const rows = await trx("monitoring_data")
+        .select("timestamp", "error_message", "raw_status")
+        .where("monitor_tag", monitor_tag)
+        .whereIn("timestamp", timestamps)
+        .whereNotNull("raw_status");
+
+      let updated = 0;
+      for (const row of rows) {
+        const severity = row.raw_status === GC.DEGRADED ? "Degraded" : "Down";
+        const note = `${severity} confirmed after ${confirmThreshold} consecutive checks`;
+        const existing: string | null = row.error_message;
+        let nextMessage: string;
+        if (!existing) {
+          nextMessage = note;
+        } else if (existing.indexOf(note) !== -1) {
+          nextMessage = existing; // already appended — keep idempotent
+        } else {
+          nextMessage = `${existing} | ${note}`;
+        }
+        updated += await trx("monitoring_data")
+          .where({ monitor_tag, timestamp: row.timestamp })
+          .update({ status: row.raw_status, error_message: nextMessage });
+      }
+      return updated;
+    });
   }
 
   async updateMonitoringData(
@@ -380,7 +485,7 @@ export class MonitoringRepository extends BaseRepository {
     });
   }
 
-  async deleteMonitorDataByTag(tag?: string, start?: number, end?: number): Promise<number> {
+  async deleteMonitorDataByTag(tag?: string, start?: number, end?: number, status?: MonitoringStatus): Promise<number> {
     const query = this.knex("monitoring_data");
     if (tag) {
       query.where("monitor_tag", tag);
@@ -390,6 +495,9 @@ export class MonitoringRepository extends BaseRepository {
     }
     if (end !== undefined) {
       query.where("timestamp", "<=", end);
+    }
+    if (status) {
+      query.where("status", status);
     }
     return await query.del();
   }
@@ -594,5 +702,10 @@ export class MonitoringRepository extends BaseRepository {
       maxLatency: Number(result?.max_latency) || 0,
       minLatency: Number(result?.min_latency) || 0,
     };
+  }
+
+  //get the last known status for a monitor
+  async getLastKnownStatus(monitor_tag: string): Promise<MonitoringData | undefined> {
+    return await this.knex("monitoring_data").where("monitor_tag", monitor_tag).orderBy("timestamp", "desc").first();
   }
 }

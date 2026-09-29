@@ -35,6 +35,9 @@
 <Item.Root class="items-start p-0 {className} sm:items-center">
   <Item.Content class="min-w-0 flex-1">
     <div class="flex flex-col items-start justify-start gap-0.5">
+      <span class="text-muted-foreground text-xs font-medium uppercase">
+        {$t("maintenance")}
+      </span>
       <span class="text-xs font-medium text-{maintenance.status.toLowerCase()}">{$t(maintenance.status)}</span>
       <Item.Title class="min-w-0 text-base wrap-break-word break-all">
         {#if maintenance.is_projected && maintenance.maintenance_id !== undefined}
@@ -54,7 +57,7 @@
 
     {#if maintenance.description}
       <div
-        class="prose prose-sm dark:prose-invert text-muted-foreground mt-1 max-w-none min-w-0 overflow-x-auto wrap-break-word"
+        class="prose prose-sm dark:prose-invert text-muted-foreground mt-1 max-w-none min-w-0 overflow-x-auto text-sm wrap-break-word"
       >
         <SveltePurify html={mdToHTML(maintenance.description)} />
       </div>
@@ -67,7 +70,7 @@
             <Popover.Trigger disabled={isEmbedded}>
               <Badge
                 variant="outline"
-                class="border-{monitor.monitor_impact.toLowerCase()}   cursor-pointer rounded-none border-0 border-b px-0  text-sm font-normal"
+                class="border-{monitor.monitor_impact.toLowerCase()}   max-w-full cursor-pointer rounded-none border-0 border-b px-0 text-sm font-normal wrap-anywhere whitespace-normal"
               >
                 {monitor.monitor_name}
               </Badge>

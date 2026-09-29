@@ -30,6 +30,8 @@ Templates define the body and subject sent by triggers. Kener uses Mustache rend
 
 All timestamps are rendered in UTC. Use `{{alert_timestamp}}` where a machine readable value is required (for example the Discord embed `timestamp` field) and `{{alert_timestamp_utc}}` for text shown to humans.
 
+`{{alert_name}}` is the tag of the monitor the alert fired for. The shipped templates build their headline as `Alert {{alert_name}} for {{alert_for}} {{alert_value}} {{alert_status}} at {{alert_timestamp}}`. Any trigger created before this change whose stored template still uses a bare `{{alert_name}}` as a headline now shows only the tag there. The old defaults did this in four places: the email subject, the email heading, the Discord embed title, and the Slack section text. Paste the headline string wherever you want the full headline back.
+
 ## Canonical site variables {#canonical-site-variables}
 
 | Variable                 |
@@ -81,5 +83,5 @@ Authorization: Bearer $API_TOKEN
 
 ## Related pages {#related-pages}
 
-- [Triggers](/docs/alerting/triggers)
-- [Webhook Examples](/docs/alerting/webhook-examples)
+- [Triggers](/docs/v4/alerting/triggers)
+- [Webhook Examples](/docs/v4/alerting/webhook-examples)

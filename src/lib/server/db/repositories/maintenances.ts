@@ -483,6 +483,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances_events.created_at",
         "maintenances_events.updated_at",
         "maintenances_events.status as status",
+        "maintenances.is_global as is_global",
       )
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
@@ -516,6 +517,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances_events.created_at",
         "maintenances_events.updated_at",
         "maintenances_events.status as status",
+        "maintenances.is_global as is_global",
       )
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
@@ -586,6 +588,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances_events.created_at",
         "maintenances_events.updated_at",
         "maintenances_events.status as status",
+        "maintenances.is_global as is_global",
       )
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
@@ -691,6 +694,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances_events.created_at",
         "maintenances_events.updated_at",
         "maintenances_events.status as status",
+        "maintenances.is_global as is_global",
       )
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
@@ -729,6 +733,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances_events.created_at",
         "maintenances_events.updated_at",
         "maintenances_events.status as status",
+        "maintenances.is_global as is_global",
       )
       .join("maintenances", "maintenances_events.maintenance_id", "maintenances.id")
       .leftJoin("maintenance_monitors", "maintenances_events.maintenance_id", "maintenance_monitors.maintenance_id")
@@ -846,6 +851,7 @@ export class MaintenancesRepository extends BaseRepository {
           start_date_time: row.start_date_time,
           end_date_time: row.end_date_time,
           status: row.status,
+          is_global: row.is_global,
           created_at: row.created_at,
           updated_at: row.updated_at,
           monitors: [],

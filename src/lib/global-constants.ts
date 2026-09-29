@@ -1,9 +1,15 @@
+import type { MonitoringStatus } from "$lib/types/status.js";
+
 // Badge styles supported by badge-maker
 export const BADGE_STYLES = ["flat", "plastic", "flat-square", "for-the-badge", "social"] as const;
 export type BadgeStyle = (typeof BADGE_STYLES)[number];
 
 // Status types
-export type StatusType = "UP" | "DOWN" | "DEGRADED" | "MAINTENANCE" | "NO_DATA";
+export const MONITORING_STATUSES = ["UP", "DOWN", "DEGRADED"] as const satisfies readonly MonitoringStatus[];
+
+export function isMonitoringStatus(value: unknown): value is MonitoringStatus {
+  return typeof value === "string" && MONITORING_STATUSES.includes(value as MonitoringStatus);
+}
 
 // Incident states
 export type IncidentState = "INVESTIGATING" | "IDENTIFIED" | "MONITORING" | "RESOLVED";
@@ -69,8 +75,22 @@ export default {
   STATUS: "STATUS",
   LATENCY: "LATENCY",
   UPTIME: "UPTIME",
+  // Special path segment addressing the home page in the v4 API; its stored
+  // page_path is an empty string. See docs/adr/0004-home-page-api-token.md.
+  HOME_PAGE_TOKEN: "~home",
+  // Status history window (days of per-day status shown), shared by pages and
+  // monitors, the manage UI, the public pages, and the v4 API
+  DEFAULT_STATUS_HISTORY_DAYS_DESKTOP: 90,
+  DEFAULT_STATUS_HISTORY_DAYS_MOBILE: 30,
+  STATUS_HISTORY_DAYS_MIN: 1,
+  STATUS_HISTORY_DAYS_MAX: 365,
+  // Monitor layout styles available on status pages
+  MONITOR_LAYOUT_STYLES: ["default-list", "default-grid", "compact-list", "compact-grid"],
+  DEFAULT_MONITOR_LAYOUT_STYLE: "default-list",
   DOCS_URL: "https://kener.ing/docs",
   MAX_UPLOAD_BYTES: 2 * 1024 * 1024, // 2MB
   MAX_IMAGE_DIMENSION: 4096,
   MAX_INPUT_PIXELS: 4096 * 4096,
+  AUTH_PROVIDER_LOCAL: "local",
+  AUTH_PROVIDER_OIDC: "oidc",
 } as const;

@@ -16,7 +16,13 @@ npm run check        # Svelte + TypeScript type checking
 npm run prettify     # Format all files with Prettier
 npm run migrate      # Run database migrations via Knex
 npm run seed         # Run database seeds (migrations run automatically first)
+npm test             # Run all tests (server unit + browser component projects)
+npm run test:server  # Server-side unit tests only (Node)
+npm run test:client  # Component tests only (headless Chromium via Playwright)
+npm run test:watch   # Watch mode
 ```
+
+Component tests need a one-time `npx playwright install chromium`.
 
 ## Architecture
 
@@ -121,3 +127,17 @@ Read `.claude/skills/` for specialized instructions on:
 - **svelte-code-writer** - Svelte component creation/editing
 - **documentation-writer** - Editing docs in `src/routes/(docs)/docs/content/`
 - **tailwindcss** - Tailwind CSS v4 patterns
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `rajnandan1/kener`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the default mattpocock/skills label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.

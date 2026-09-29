@@ -1,5 +1,6 @@
 import Knex from "knex";
 import type { Knex as KnexType } from "knex";
+import { runWithWorkerKnex } from "./poolContext.js";
 
 // Import all repositories
 import { MonitoringRepository } from "./repositories/monitoring.js";
@@ -29,6 +30,9 @@ export type * from "../types/db.js";
  */
 class DbImpl {
   private knex: KnexType;
+  // Dedicated pool for background jobs (Postgres/MySQL). Equals `knex` when
+  // there is no separate worker pool (e.g. SQLite).
+  private workerKnex: KnexType;
 
   // Domain repositories
   private monitoring!: MonitoringRepository;
@@ -48,7 +52,6 @@ class DbImpl {
   // ============ Monitoring Data ============
   insertMonitoringData!: MonitoringRepository["insertMonitoringData"];
   getMonitoringData!: MonitoringRepository["getMonitoringData"];
-  getMonitoringDataAll!: MonitoringRepository["getMonitoringDataAll"];
   getLatestMonitoringData!: MonitoringRepository["getLatestMonitoringData"];
   getLatestMonitoringDataN!: MonitoringRepository["getLatestMonitoringDataN"];
   getMonitoringDataPaginated!: MonitoringRepository["getMonitoringDataPaginated"];
@@ -65,11 +68,15 @@ class DbImpl {
   consecutivelyStatusFor!: MonitoringRepository["consecutivelyStatusFor"];
   consecutivelyLatencyGreaterThan!: MonitoringRepository["consecutivelyLatencyGreaterThan"];
   consecutivelyLatencyLessThan!: MonitoringRepository["consecutivelyLatencyLessThan"];
+  getRecentSamplesForConfirmation!: MonitoringRepository["getRecentSamplesForConfirmation"];
+  getLastObservedStatus!: MonitoringRepository["getLastObservedStatus"];
+  backfillConfirmedStatus!: MonitoringRepository["backfillConfirmedStatus"];
   updateMonitoringData!: MonitoringRepository["updateMonitoringData"];
   deleteMonitorDataByTag!: MonitoringRepository["deleteMonitorDataByTag"];
   getStatusCountsByInterval!: MonitoringRepository["getStatusCountsByInterval"];
   getStatusCountsByIntervalGroupedByMonitor!: MonitoringRepository["getStatusCountsByIntervalGroupedByMonitor"];
   getStatusCountsForLastN!: MonitoringRepository["getStatusCountsForLastN"];
+  getLastKnownStatus!: MonitoringRepository["getLastKnownStatus"];
 
   // ============ Monitors ============
   getMonitorsByTags!: MonitorsRepository["getMonitorsByTags"];
@@ -119,6 +126,7 @@ class DbImpl {
   updateUserIsActive!: UsersRepository["updateUserIsActive"];
   updateUserPasswordById!: UsersRepository["updateUserPasswordById"];
   updateIsVerified!: UsersRepository["updateIsVerified"];
+  updateUserProfile!: UsersRepository["updateUserProfile"];
 
   // ============ Roles ============
   getRoleById!: UsersRepository["getRoleById"];
@@ -138,6 +146,14 @@ class DbImpl {
   getUserPermissionIds!: UsersRepository["getUserPermissionIds"];
   getUserRoleIds!: UsersRepository["getUserRoleIds"];
 
+  // ============ OIDC ============
+  getUserByOidcSub!: UsersRepository["getUserByOidcSub"];
+  getAllOidcGroupRoleMappings!: UsersRepository["getAllOidcGroupRoleMappings"];
+  getOidcGroupRoleMappingByGroup!: UsersRepository["getOidcGroupRoleMappingByGroup"];
+  upsertOidcGroupRoleMapping!: UsersRepository["upsertOidcGroupRoleMapping"];
+  deleteOidcGroupRoleMapping!: UsersRepository["deleteOidcGroupRoleMapping"];
+  getOidcRoleIdsForGroups!: UsersRepository["getOidcRoleIdsForGroups"];
+
   // ============ API Keys ============
   createNewApiKey!: UsersRepository["createNewApiKey"];
   updateApiKeyStatus!: UsersRepository["updateApiKeyStatus"];
@@ -151,6 +167,7 @@ class DbImpl {
   getSiteData!: SiteDataRepository["getSiteData"];
   getSiteDataByKey!: SiteDataRepository["getSiteDataByKey"];
   getAllSiteDataAnalytics!: SiteDataRepository["getAllSiteDataAnalytics"];
+  getAllSiteDataByPrefix!: SiteDataRepository["getAllSiteDataByPrefix"];
 
   // ============ Incidents ============
   getIncidentsPaginated!: IncidentsRepository["getIncidentsPaginated"];
@@ -372,8 +389,11 @@ class DbImpl {
   deleteEmailTemplate!: EmailTemplateConfigRepository["deleteEmailTemplate"];
   upsertEmailTemplate!: EmailTemplateConfigRepository["upsertEmailTemplate"];
 
-  constructor(opts: KnexType.Config) {
+  constructor(opts: KnexType.Config, workerOpts?: KnexType.Config | null) {
     this.knex = Knex(opts);
+    // Separate pool for background jobs when configured (Postgres/MySQL);
+    // otherwise reuse the web pool (SQLite has a single connection).
+    this.workerKnex = workerOpts ? Knex(workerOpts) : this.knex;
 
     // Initialize repositories
     this.monitoring = new MonitoringRepository(this.knex);
@@ -409,7 +429,6 @@ class DbImpl {
   private bindMonitoringMethods(): void {
     this.insertMonitoringData = this.monitoring.insertMonitoringData.bind(this.monitoring);
     this.getMonitoringData = this.monitoring.getMonitoringData.bind(this.monitoring);
-    this.getMonitoringDataAll = this.monitoring.getMonitoringDataAll.bind(this.monitoring);
     this.getLatestMonitoringData = this.monitoring.getLatestMonitoringData.bind(this.monitoring);
     this.getLatestMonitoringDataN = this.monitoring.getLatestMonitoringDataN.bind(this.monitoring);
     this.getMonitoringDataPaginated = this.monitoring.getMonitoringDataPaginated.bind(this.monitoring);
@@ -426,6 +445,9 @@ class DbImpl {
     this.consecutivelyStatusFor = this.monitoring.consecutivelyStatusFor.bind(this.monitoring);
     this.consecutivelyLatencyGreaterThan = this.monitoring.consecutivelyLatencyGreaterThan.bind(this.monitoring);
     this.consecutivelyLatencyLessThan = this.monitoring.consecutivelyLatencyLessThan.bind(this.monitoring);
+    this.getRecentSamplesForConfirmation = this.monitoring.getRecentSamplesForConfirmation.bind(this.monitoring);
+    this.getLastObservedStatus = this.monitoring.getLastObservedStatus.bind(this.monitoring);
+    this.backfillConfirmedStatus = this.monitoring.backfillConfirmedStatus.bind(this.monitoring);
     this.updateMonitoringData = this.monitoring.updateMonitoringData.bind(this.monitoring);
     this.deleteMonitorDataByTag = this.monitoring.deleteMonitorDataByTag.bind(this.monitoring);
     this.getStatusCountsByInterval = this.monitoring.getStatusCountsByInterval.bind(this.monitoring);
@@ -433,6 +455,7 @@ class DbImpl {
       this.monitoring,
     );
     this.getStatusCountsForLastN = this.monitoring.getStatusCountsForLastN.bind(this.monitoring);
+    this.getLastKnownStatus = this.monitoring.getLastKnownStatus.bind(this.monitoring);
   }
 
   private bindMonitorsMethods(): void {
@@ -488,6 +511,7 @@ class DbImpl {
     this.deleteApiKey = this.users.deleteApiKey.bind(this.users);
     this.getApiKeyByHashedKey = this.users.getApiKeyByHashedKey.bind(this.users);
     this.getAllApiKeys = this.users.getAllApiKeys.bind(this.users);
+    this.updateUserProfile = this.users.updateUserProfile.bind(this.users);
 
     // Roles
     this.getRoleById = this.users.getRoleById.bind(this.users);
@@ -506,6 +530,14 @@ class DbImpl {
     this.removeUserFromRole = this.users.removeUserFromRole.bind(this.users);
     this.getUserPermissionIds = this.users.getUserPermissionIds.bind(this.users);
     this.getUserRoleIds = this.users.getUserRoleIds.bind(this.users);
+
+    // OIDC
+    this.getUserByOidcSub = this.users.getUserByOidcSub.bind(this.users);
+    this.getAllOidcGroupRoleMappings = this.users.getAllOidcGroupRoleMappings.bind(this.users);
+    this.getOidcGroupRoleMappingByGroup = this.users.getOidcGroupRoleMappingByGroup.bind(this.users);
+    this.upsertOidcGroupRoleMapping = this.users.upsertOidcGroupRoleMapping.bind(this.users);
+    this.deleteOidcGroupRoleMapping = this.users.deleteOidcGroupRoleMapping.bind(this.users);
+    this.getOidcRoleIdsForGroups = this.users.getOidcRoleIdsForGroups.bind(this.users);
   }
 
   private bindSiteDataMethods(): void {
@@ -514,6 +546,7 @@ class DbImpl {
     this.getSiteData = this.siteData.getSiteData.bind(this.siteData);
     this.getSiteDataByKey = this.siteData.getSiteDataByKey.bind(this.siteData);
     this.getAllSiteDataAnalytics = this.siteData.getAllSiteDataAnalytics.bind(this.siteData);
+    this.getAllSiteDataByPrefix = this.siteData.getAllSiteDataByPrefix.bind(this.siteData);
   }
 
   private bindIncidentsMethods(): void {
@@ -838,8 +871,30 @@ class DbImpl {
 
   async init(): Promise<void> {}
 
+  /**
+   * Runs `fn` with all repository queries routed to the worker connection pool.
+   * Wrap background work (BullMQ job processors, schedulers) with this so a
+   * burst of jobs cannot exhaust the web pool that serves page loads.
+   */
+  runInWorkerContext<T>(fn: () => Promise<T>): Promise<T> {
+    return runWithWorkerKnex(this.workerKnex, fn);
+  }
+
+  /** Probes database connectivity with a trivial query. Never throws. */
+  async ping(): Promise<boolean> {
+    try {
+      await this.knex.raw("select 1");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async close(): Promise<void> {
-    return await this.knex.destroy();
+    await this.knex.destroy();
+    if (this.workerKnex !== this.knex) {
+      await this.workerKnex.destroy();
+    }
   }
 }
 

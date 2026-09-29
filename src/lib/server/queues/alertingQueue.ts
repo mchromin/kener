@@ -24,21 +24,18 @@ import {
   UpdateMonitorAlertV2Status,
 } from "../controllers/monitorAlertConfigController.js";
 import type { IncidentInput } from "../controllers/incidentController.js";
-import { InsertNewAlert } from "../controllers/controller.js";
 import { GetMonitorAlertsV2 } from "../controllers/monitorAlertConfigController.js";
 import db from "../db/db.js";
 import { getUnixTime, differenceInSeconds } from "date-fns";
+import { parseDbTimestamp } from "../tool.js";
 import GC from "../../global-constants.js";
 import { alertToVariables, siteDataToVariables } from "../notification/notification_utils.js";
 import sendEmail from "../notification/email_notification.js";
 import sendWebhook from "$lib/server/notification/webhook_notification.js";
 import sendSlack from "$lib/server/notification/slack_notification.js";
 import sendDiscord from "$lib/server/notification/discord_notification.js";
-import serverResolver from "../resolver.js";
 
-import type { SiteDataForNotification, SubscriptionVariableMap } from "../notification/types.js";
-import mdToHTML from "../../marked.js";
-import subscriberQueue from "./subscriberQueue.js";
+import type { SiteDataForNotification } from "../notification/types.js";
 let alertingQueue: Queue | null = null;
 
 let worker: Worker | null = null;
@@ -65,15 +62,16 @@ async function createNewIncident(
   config: MonitorAlertConfigRecord,
   monitorName: string,
   monitorTag: string,
-  siteUrl: string = "",
 ): Promise<{ incident_id: number }> {
-  let startDateTime = getUnixTime(new Date(alert.created_at));
+  let startDateTime = getUnixTime(parseDbTimestamp(alert.created_at));
   let incidentInput: IncidentInput = {
     title: monitorName + " " + config.alert_for + ": " + config.alert_value,
     start_date_time: startDateTime,
     incident_source: "ALERT",
   };
 
+  // Subscriber notification comes from AddIncidentComment (via
+  // CreateNewIncidentWithCommentAndMonitor) — do not push here too.
   let update = IncidentCreateAlertMarkdown(alert, config, monitorName, monitorTag, GC.TRIGGERED);
   let incidentCreated = await CreateNewIncidentWithCommentAndMonitor(
     incidentInput,
@@ -93,7 +91,6 @@ async function closeIncident(
   config: MonitorAlertConfigRecord,
   monitorName: string,
   monitorTag: string,
-  siteUrl: string = "",
 ): Promise<void> {
   //check if incident is already resolved
   if (!alert.incident_id) {
@@ -110,8 +107,8 @@ async function closeIncident(
 
   let incident_id = alert.incident_id;
   const comment = ClosureCommentAlertMarkdown(alert, config, monitorName, monitorTag, GC.RESOLVED);
-  const updatedAt = getUnixTime(new Date(alert.updated_at));
-  // Subscriber email is sent by AddIncidentComment below.
+  const updatedAt = getUnixTime(parseDbTimestamp(alert.updated_at));
+  // Subscriber notification comes from AddIncidentComment — do not push here too.
   await AddIncidentComment(incident_id, comment, GC.RESOLVED, updatedAt);
 }
 
@@ -233,7 +230,6 @@ const addWorker = () => {
               monitor_alerts_configured,
               monitor_name,
               monitor_tag,
-              templateSiteVars.site_url,
             );
             //update alert with incident number
             if (newIncidentNumber && newIncidentNumber.incident_id > 0) {
@@ -273,13 +269,7 @@ const addWorker = () => {
 
           // If alert has an incident, add closure comment
           if (activeAlert.incident_id) {
-            await closeIncident(
-              activeAlert,
-              monitor_alerts_configured,
-              monitor_name,
-              monitor_tag,
-              templateSiteVars.site_url,
-            );
+            await closeIncident(activeAlert, monitor_alerts_configured, monitor_name, monitor_tag);
           }
 
           // Send resolution notifications

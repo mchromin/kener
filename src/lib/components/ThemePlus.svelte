@@ -6,6 +6,8 @@
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
 
+  import Rss from "@lucide/svelte/icons/rss";
+  import trackEvent from "$lib/beacon";
   import SubscribeMenu from "$lib/components/SubscribeMenu.svelte";
   import BadgesMenu from "$lib/components/BadgesMenu.svelte";
   import EmbedMenu from "$lib/components/EmbedMenu.svelte";
@@ -15,12 +17,19 @@
   interface Props {
     monitor_tags?: string[];
     embedMonitorTag?: string;
+    hideNotificationsPopover?: boolean;
   }
 
-  let { monitor_tags = [], embedMonitorTag = "" }: Props = $props();
+  let { monitor_tags = [], embedMonitorTag = "", hideNotificationsPopover = false }: Props = $props();
 
   let protocol = $state("");
   let domain = $state("");
+  const rssHref = $derived.by(() => {
+    const params = page.params;
+    if (params.monitor_tag) return clientResolver(resolve, `/monitors/${params.monitor_tag}/rss.xml`);
+    if (params.page_path) return clientResolver(resolve, `/${params.page_path}/rss.xml`);
+    return clientResolver(resolve, "/rss.xml");
+  });
 
   const loginDetails = $derived.by((): { label: string; url: string } | null => {
     if (!page.data?.loggedInUser) return null;
@@ -65,6 +74,24 @@
     {#if page.data.isSubsEnabled && page.data.canSendEmail}
       <ButtonGroup.Root class="rounded-btn-grp shrink-0 sm:hidden">
         <SubscribeMenu compact={true} />
+      </ButtonGroup.Root>
+    {/if}
+
+    {#if page.data.subMenuOptions?.showRssFeed !== false}
+      <ButtonGroup.Root class="rounded-btn-grp shrink-0">
+        <Button
+          variant="outline"
+          size="icon-sm"
+          href={rssHref}
+          target="_blank"
+          rel="alternate"
+          aria-label={$t("RSS feed")}
+          title={$t("RSS feed")}
+          class="bg-background/80 dark:bg-background/70 border-foreground/10 cursor-pointer rounded-full border shadow-none backdrop-blur-md"
+          onclick={() => trackEvent("rss_opened", { source: "theme_plus" })}
+        >
+          <Rss />
+        </Button>
       </ButtonGroup.Root>
     {/if}
 

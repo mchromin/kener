@@ -192,11 +192,11 @@ status.yourdomain.com {
 }
 ```
 
-📖 **For complete configuration including SSL, subpaths, load balancing, and troubleshooting**, see the [Reverse Proxy Setup Guide](/docs/advanced-topics/reverse-proxy).
+📖 **For complete configuration including SSL, subpaths, load balancing, and troubleshooting**, see the [Reverse Proxy Setup Guide](/docs/v4/guides/reverse-proxy).
 
 ## Next Steps
 
-- Set up [Monitors](/docs/monitors)
-- Configure [Incidents](/docs/incidents)
+- Set up [Monitors](/docs/v4/monitors)
+- Configure [Incidents](/docs/v4/incidents)
 - Configure [Sharing Monitors](/docs/v4/sharing)
-- Explore the [API Reference](/docs/api-reference)
+- Explore the [API Reference](/docs/spec/v4/)

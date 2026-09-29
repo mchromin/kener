@@ -7,10 +7,11 @@ import {
   GetLoggedInSession,
   GetLocaleFromCookie,
   GetUsersCount,
+  HasRequiredEnv,
   IsEmailSetup,
-  IsSetupComplete,
 } from "./controller.js";
 import type { EventDisplaySettings, GlobalPageVisibilitySettings, SiteDateTimeFormat } from "$lib/types/site.js";
+import serverResolve from "../resolver.js";
 
 export interface LayoutServerData {
   isMobile: boolean;
@@ -48,6 +49,7 @@ export interface LayoutServerData {
   subMenuOptions: {
     showShareBadgeMonitor: boolean;
     showShareEmbedMonitor: boolean;
+    showRssFeed: boolean;
   };
   isTimezoneEnabled: boolean;
   isThemeToggleEnabled: boolean;
@@ -75,6 +77,43 @@ export interface LayoutServerData {
   metaSiteDescription?: string;
 }
 
+function NormalizeEventDisplaySettings(settings?: Partial<EventDisplaySettings>): EventDisplaySettings {
+  const defaults = structuredClone(seedSiteData.eventDisplaySettings);
+
+  return {
+    showInlineEvents:
+      typeof settings?.showInlineEvents === "boolean" ? settings.showInlineEvents : defaults.showInlineEvents,
+    incidents: {
+      ...defaults.incidents,
+      ...settings?.incidents,
+      ongoing: {
+        ...defaults.incidents.ongoing,
+        ...settings?.incidents?.ongoing,
+      },
+      resolved: {
+        ...defaults.incidents.resolved,
+        ...settings?.incidents?.resolved,
+      },
+    },
+    maintenances: {
+      ...defaults.maintenances,
+      ...settings?.maintenances,
+      ongoing: {
+        ...defaults.maintenances.ongoing,
+        ...settings?.maintenances?.ongoing,
+      },
+      past: {
+        ...defaults.maintenances.past,
+        ...settings?.maintenances?.past,
+      },
+      upcoming: {
+        ...defaults.maintenances.upcoming,
+        ...settings?.maintenances?.upcoming,
+      },
+    },
+  };
+}
+
 export async function GetLayoutServerData(cookies: Cookies, request: Request): Promise<LayoutServerData> {
   const userAgent = request.headers.get("user-agent") ?? "";
   const md = new MobileDetect(userAgent);
@@ -86,7 +125,9 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
     GetUsersCount(),
   ]);
 
-  const isSetupComplete = await IsSetupComplete();
+  // Same check as IsSetupComplete, but reuses the site data fetched above
+  // instead of querying it a second time on every request
+  const isSetupComplete = HasRequiredEnv() && Object.keys(siteData).length > 0;
 
   const selectedLang = GetLocaleFromCookie(siteData, cookies);
   const siteStatusColors = siteData.colors;
@@ -125,7 +166,10 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
     siteName: siteData.siteName || "Kener",
     siteUrl: siteData.siteURL || "",
     logo: siteData.logo,
-    favicon: siteData.favicon,
+    // Browsers fetch <link rel="icon"> from the SSR HTML before hydration.
+    // SvelteKit's resolve() uses a relative base on the app-root page, so
+    // prefix KENER_BASE_PATH here instead of in the layout.
+    favicon: siteData.favicon ? serverResolve(siteData.favicon) : siteData.favicon,
     footerHTML: siteData.footerHTML || "",
     isSubsEnabled,
     languageSetting,
@@ -136,7 +180,7 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
     font,
     canSendEmail,
     announcement: siteData.announcement,
-    eventDisplaySettings: siteData.eventDisplaySettings || seedSiteData.eventDisplaySettings,
+    eventDisplaySettings: NormalizeEventDisplaySettings(siteData.eventDisplaySettings),
     socialPreviewImage: siteData.socialPreviewImage,
     customCSS: siteData.customCSS,
     globalPageVisibilitySettings: siteData.globalPageVisibilitySettings || seedSiteData.globalPageVisibilitySettings,
