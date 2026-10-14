@@ -109,6 +109,22 @@ export const GetLocaleFromCookie = (site: SiteDataTransformed, cookies: Cookies)
   return selectedLang;
 };
 
+/**
+ * Returns the site URL used for building absolute public URLs, without a trailing slash.
+ * Prefers the configured siteURL and falls back to the ORIGIN env var; only absolute
+ * http(s) values are returned. Returns an empty string when neither is usable, in which
+ * case callers degrade to a relative path.
+ */
+export const GetSiteURL = async (): Promise<string> => {
+  const siteURL = await GetSiteDataByKey("siteURL");
+  for (const candidate of [siteURL, process.env.ORIGIN]) {
+    if (typeof candidate === "string" && /^https?:\/\//i.test(candidate)) {
+      return candidate.replace(/\/+$/, "");
+    }
+  }
+  return "";
+};
+
 export const GetSiteLogoURL = async (siteURL: string, logo: string, base: string): Promise<string> => {
   if (logo.startsWith("http")) {
     return logo;
@@ -118,6 +134,18 @@ export const GetSiteLogoURL = async (siteURL: string, logo: string, base: string
 
 export async function GetAllAnalyticsData() {
   let data = await db.getAllSiteDataAnalytics();
+  //return all data as key value pairs, transform using data_type
+  let transformedData = [];
+  for (const d of data) {
+    transformedData.push({
+      key: d.key,
+      value: JSON.parse(d.value),
+    });
+  }
+  return transformedData;
+}
+export async function GetAllCaptchaData() {
+  let data = await db.getAllSiteDataByPrefix("captcha");
   //return all data as key value pairs, transform using data_type
   let transformedData = [];
   for (const d of data) {
@@ -139,14 +167,17 @@ export const GetSiteDataByKey = async (key: string): Promise<unknown> => {
   return data.value;
 };
 
+/** Checks the env vars required for setup, without touching the database. */
+export const HasRequiredEnv = (): boolean => {
+  return (
+    process.env.KENER_SECRET_KEY !== undefined &&
+    process.env.ORIGIN !== undefined &&
+    process.env.REDIS_URL !== undefined
+  );
+};
+
 export const IsSetupComplete = async (): Promise<boolean> => {
-  if (process.env.KENER_SECRET_KEY === undefined) {
-    return false;
-  }
-  if (process.env.ORIGIN === undefined) {
-    return false;
-  }
-  if (process.env.REDIS_URL === undefined) {
+  if (!HasRequiredEnv()) {
     return false;
   }
   let data = await db.getAllSiteData();

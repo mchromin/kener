@@ -3,13 +3,12 @@
   import "../kener.css";
   import "../embed.css";
   import { ModeWatcher } from "mode-watcher";
-  import { resolve } from "$app/paths";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
 
   let { children, data } = $props();
 </script>
 
-<ModeWatcher />
+<ModeWatcher defaultMode={data.defaultSiteTheme as "light" | "dark" | "system"} />
 <Toaster />
 
 <svelte:head>
@@ -21,7 +20,7 @@
   {/if}
   {@html `
 	<style id="dynamic-styles">
-		.body {
+		body {
 			--up: ${data.siteStatusColors.UP};
 			--degraded: ${data.siteStatusColors.DEGRADED};
 			--down: ${data.siteStatusColors.DOWN};
@@ -40,7 +39,7 @@
 		}
 	</style>`}
 </svelte:head>
-<main class="kener-public">
+<main class="kener-public embed-app">
   {@render children()}
 </main>
 

@@ -162,7 +162,7 @@ class SqlCall {
       // For SQL Server, parse connection strings into a config object
       // because Knex/tedious does not parse ADO strings, and URL parsing
       // leaves the port as a string (tedious requires a number).
-      let connectionConfig: unknown = connection;
+      let connectionConfig: KnexType.Config["connection"] = connection;
       if (client === "mssql" && typeof connection === "string") {
         if (/^mssql:\/\//i.test(connection) || /^sqlserver:\/\//i.test(connection)) {
           connectionConfig = parseMssqlUrl(connection);

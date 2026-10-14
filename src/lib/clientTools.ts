@@ -1,5 +1,6 @@
 import type { TimestampStatusCount } from "$lib/server/types/db";
-import { PAGE_STATUS_MESSAGES } from "$lib/global-constants";
+import GC, { PAGE_STATUS_MESSAGES } from "$lib/global-constants";
+import type { StatusType } from "$lib/types/status";
 
 function ParseLatency(latencyMs: number): string {
   if (!!!latencyMs) {
@@ -120,8 +121,8 @@ const AllRecordTypes = {
   ANY: 255,
 };
 const ValidateIpAddress = function (input: string): "IP4" | "IP6" | "DOMAIN" | "Invalid" {
-  // Check if input is a valid IPv4 address with an optional port
-  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  // Check if input is a dotted-quad IPv4 address with each octet in 0-255.
+  const ipv4Regex = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
   if (ipv4Regex.test(input)) {
     return "IP4";
   }
@@ -148,9 +149,19 @@ function IsValidHost(domain: string): boolean {
   return regex.test(domain);
 }
 function IsValidNameServer(nameServer: string): boolean {
-  //8.8.8.8 example
-  const regex = /^([0-9]{1,3}\.){3}[0-9]{1,3}$/;
-  return regex.test(nameServer);
+  // Validate a dotted-quad IPv4 nameserver (e.g. 8.8.8.8) through the shared
+  // validator so octet range-checking stays consistent with the rest of the app.
+  return ValidateIpAddress(nameServer.trim()) === "IP4";
+}
+function IsValidDnsResolver(resolver: string): boolean {
+  const normalizedResolver = resolver.trim();
+  // Route IP inputs through the shared validator so the IPv4 grammar (octet
+  // range, no zero-padded forms) stays consistent with the rest of the app.
+  const ipType = ValidateIpAddress(normalizedResolver);
+  if (ipType === "IP4" || ipType === "IP6") {
+    return true;
+  }
+  return IsValidHost(normalizedResolver);
 }
 const IsValidURL = function (url: string): boolean {
   return /^(http|https):\/\/[^ "]+$/.test(url);
@@ -316,46 +327,53 @@ interface GameItem {
 function GetGameFromId(list: GameItem[], id: string): GameItem | undefined {
   return list.find((game: GameItem) => game.id === id);
 }
+type StatusCounts = Pick<TimestampStatusCount, "countOfUp" | "countOfDown" | "countOfDegraded" | "countOfMaintenance">;
+
+// Canonical Overall Status collapse: the worst state wins, and maintenance
+// never masks an active problem. See docs/adr/0007-problem-first-overall-status.md.
+function CollapseStatusCounts(counts: StatusCounts): StatusType {
+  const total = counts.countOfUp + counts.countOfDown + counts.countOfDegraded + counts.countOfMaintenance;
+  if (total === 0) return GC.NO_DATA;
+  if (counts.countOfDown > 0) return GC.DOWN;
+  if (counts.countOfDegraded > 0) return GC.DEGRADED;
+  if (counts.countOfMaintenance > 0) return GC.MAINTENANCE;
+  return GC.UP;
+}
+
 function GetStatusSummary(item: TimestampStatusCount): string {
   const total = item.countOfUp + item.countOfDown + item.countOfDegraded + item.countOfMaintenance;
-  if (total === 0) return PAGE_STATUS_MESSAGES.NO_DATA;
 
-  const maintenancePercent = (item.countOfMaintenance / total) * 100;
-  const downPercent = (item.countOfDown / total) * 100;
-  const degradedPercent = (item.countOfDegraded / total) * 100;
-
-  if (maintenancePercent > 0) {
-    return PAGE_STATUS_MESSAGES.UNDER_MAINTENANCE;
-  } else if (downPercent >= 75) {
-    return PAGE_STATUS_MESSAGES.MAJOR_OUTAGE;
-  } else if (downPercent >= 50) {
-    return PAGE_STATUS_MESSAGES.PARTIAL_OUTAGE;
-  } else if (item.countOfDown > 0) {
-    return PAGE_STATUS_MESSAGES.PARTIAL_OUTAGE;
-  } else if (degradedPercent >= 75) {
-    return PAGE_STATUS_MESSAGES.DEGRADED_PERFORMANCE;
-  } else if (degradedPercent >= 50) {
-    return PAGE_STATUS_MESSAGES.PARTIAL_DEGRADED;
-  } else if (item.countOfDegraded > 0) {
-    return PAGE_STATUS_MESSAGES.PARTIAL_DEGRADED;
-  } else if (item.countOfUp === total) {
-    return PAGE_STATUS_MESSAGES.ALL_OPERATIONAL;
+  switch (CollapseStatusCounts(item)) {
+    case GC.DOWN:
+      return (item.countOfDown / total) * 100 >= 75
+        ? PAGE_STATUS_MESSAGES.MAJOR_OUTAGE
+        : PAGE_STATUS_MESSAGES.PARTIAL_OUTAGE;
+    case GC.DEGRADED:
+      return (item.countOfDegraded / total) * 100 >= 75
+        ? PAGE_STATUS_MESSAGES.DEGRADED_PERFORMANCE
+        : PAGE_STATUS_MESSAGES.PARTIAL_DEGRADED;
+    case GC.MAINTENANCE:
+      return PAGE_STATUS_MESSAGES.UNDER_MAINTENANCE;
+    case GC.UP:
+      return PAGE_STATUS_MESSAGES.ALL_OPERATIONAL;
+    default:
+      return PAGE_STATUS_MESSAGES.NO_DATA;
   }
-
-  return PAGE_STATUS_MESSAGES.NO_DATA;
 }
 
 function GetStatusColor(item: TimestampStatusCount): string {
-  const total = item.countOfUp + item.countOfDown + item.countOfDegraded + item.countOfMaintenance;
-  if (total === 0) return "text-muted-foreground";
-
-  const maintenancePercent = (item.countOfMaintenance / total) * 100;
-  const downPercent = (item.countOfDown / total) * 100;
-
-  if (maintenancePercent > 0) return "text-maintenance";
-  if (downPercent > 0) return "text-down";
-  if (item.countOfDegraded > 0) return "text-degraded";
-  return "text-up";
+  switch (CollapseStatusCounts(item)) {
+    case GC.DOWN:
+      return "text-down";
+    case GC.DEGRADED:
+      return "text-degraded";
+    case GC.MAINTENANCE:
+      return "text-maintenance";
+    case GC.UP:
+      return "text-up";
+    default:
+      return "text-muted-foreground";
+  }
 }
 
 function GetStatusBgColor(item: TimestampStatusCount): string {
@@ -386,8 +404,10 @@ export {
   ValidateIpAddress,
   IsValidHost,
   IsValidNameServer,
+  IsValidDnsResolver,
   IsValidURL,
   IsValidPort,
+  CollapseStatusCounts,
   GetStatusSummary,
   GetStatusColor,
   GetStatusBgColor,

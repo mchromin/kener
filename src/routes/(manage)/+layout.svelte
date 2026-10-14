@@ -23,6 +23,8 @@
   import KeyIcon from "@lucide/svelte/icons/key";
   import UsersIcon from "@lucide/svelte/icons/users";
   import ShieldIcon from "@lucide/svelte/icons/shield";
+  import ShieldCheckIcon from "@lucide/svelte/icons/shield-check";
+  import FingerprintIcon from "@lucide/svelte/icons/fingerprint";
   import Columns3CogIcon from "@lucide/svelte/icons/columns-3-cog";
   import SiteHeader from "./manage/site-header.svelte";
   import TemplateIcon from "@lucide/svelte/icons/layout-template";
@@ -41,6 +43,7 @@
     { title: "Internationalization", url: "/manage/app/internationalization", icon: GlobeIcon },
     { title: "Customizations", url: "/manage/app/customizations", icon: Columns3CogIcon },
     { title: "Analytics Providers", url: "/manage/app/analytics-providers", icon: ChartSplineIcon },
+    { title: "Captcha Providers", url: "/manage/app/captcha-providers", icon: ShieldCheckIcon },
     { title: "Pages", url: "/manage/app/pages", icon: BookOpenIcon },
     { title: "Monitors", url: "/manage/app/monitors", icon: BlendIcon },
     { title: "Monitoring Data", url: "/manage/app/monitoring-data", icon: DatabaseIcon },
@@ -50,6 +53,7 @@
     { title: "Subscriptions", url: "/manage/app/subscriptions", icon: BellIcon },
     { title: "Users", url: "/manage/app/users", icon: UsersIcon },
     { title: "Roles", url: "/manage/app/roles", icon: ShieldIcon },
+    { title: "OpenID Connect", url: "/manage/app/oidc", icon: FingerprintIcon },
     { title: "Triggers", url: "/manage/app/triggers", icon: MailboxIcon },
     { title: "Templates", url: "/manage/app/templates", icon: TemplateIcon },
     { title: "Badges", url: "/manage/app/badges", icon: BadgeIcon },
@@ -71,7 +75,7 @@
   let pageTitle = $derived(navItems.find((item) => page.url.pathname.startsWith(item.url))?.title || "Dashboard");
 </script>
 
-<ModeWatcher />
+<ModeWatcher defaultMode={data.defaultSiteTheme as 'light' | 'dark' | 'system'} />
 <Toaster />
 
 <svelte:head>

@@ -89,6 +89,7 @@ export interface SiteSubscriptionsSettings {
 export interface SiteSubMenuOptions {
   showShareBadgeMonitor: boolean;
   showShareEmbedMonitor: boolean;
+  showRssFeed: boolean;
 }
 
 export interface DataRetentionPolicy {
@@ -97,6 +98,7 @@ export interface DataRetentionPolicy {
 }
 
 export interface EventDisplaySettings {
+  showInlineEvents: boolean;
   incidents: {
     enabled: boolean;
     ongoing: {
@@ -157,4 +159,25 @@ export interface GlobalMaintenanceNotificationSettings {
     ended: boolean;
   };
   reminder_buffer_hours: number;
+}
+
+export interface OidcSettings {
+  enabled: boolean;
+  provider_name: string;
+  issuer_url: string;
+  client_id: string;
+  client_secret: string;
+  scopes: string;
+  groups_claim: string;
+  allow_local_login: boolean;
+  auto_create_users: boolean;
+  default_role_id: string;
+}
+
+export interface OidcGroupRoleMapping {
+  id?: number;
+  oidc_group: string;
+  role_id: string;
+  created_at?: Date;
+  updated_at?: Date;
 }

@@ -25,6 +25,9 @@
   if (!data.eval) data.eval = DefaultAPIEval;
   if (data.allowSelfSignedCert === undefined) data.allowSelfSignedCert = false;
 
+  if (data.follow_redirects === undefined) data.follow_redirects = true;
+  if (data.max_redirects === undefined) data.max_redirects = 5;
+
   const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
   function addHeader() {
@@ -68,6 +71,12 @@
     <Input id="api-timeout" type="number" bind:value={data.timeout} placeholder="10000" />
   </div>
 
+  <div class="flex flex-col gap-2">
+    <Label for="api-proxy">Proxy URL</Label>
+    <Input id="api-proxy" bind:value={data.proxy} placeholder="http://user:$PROXY_PASS@proxy.internal:3128" />
+    <p class="text-muted-foreground text-xs">Leave empty to use HTTP_PROXY / HTTPS_PROXY from the environment.</p>
+  </div>
+
   <div>
     <div class="mb-2 flex items-center justify-between">
       <Label>Headers</Label>
@@ -101,6 +110,24 @@
   <div class="flex items-center space-x-2">
     <Switch id="api-self-signed" bind:checked={data.allowSelfSignedCert} />
     <Label for="api-self-signed">Allow Self-Signed Certificates</Label>
+  </div>
+
+  <div class="flex items-center space-x-2">
+    <Switch id="api-follow-redirects" bind:checked={data.follow_redirects} />
+    <Label for="api-follow-redirects">Follow Redirects</Label>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <Label for="api-max-redirects">Max Redirects</Label>
+    <Input
+      id="api-max-redirects"
+      type="number"
+      min="0"
+      max="20"
+      step="1"
+      bind:value={data.max_redirects}
+      disabled={!data.follow_redirects}
+    />
   </div>
 
   <div class="flex flex-col gap-2">

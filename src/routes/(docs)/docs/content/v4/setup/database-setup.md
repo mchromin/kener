@@ -81,13 +81,51 @@ With SSL:
 DATABASE_URL=postgresql://user:pass@host:5432/kener?sslmode=require
 ```
 
+### Maintenance {#postgresql-maintenance}
+
+Kener's nightly data-retention job deletes expired `monitoring_data` rows. Migrations lower that table's autovacuum thresholds (vacuum at ~1% dead rows, analyze at ~0.5% changed rows) so Postgres becomes eligible for its asynchronous maintenance soon after enough rows change — typically shortly after a nightly cleanup — instead of letting bloat accumulate for days and slow every page load.
+
+If you upgrade an existing install whose `monitoring_data` is already large, run once after migrating:
+
+```sql
+VACUUM (ANALYZE) monitoring_data;
+```
+
 ## MySQL {#mysql}
 
 Use when MySQL/MariaDB is your standard stack.
 
+Run the server with `time_zone` set to UTC (for example `--default-time-zone=+00:00`). Kener runs in UTC and reads `created_at`/`updated_at` as UTC; a non-UTC server session shifts them. See [/docs/v4/setup/environment-variables#timezone](/docs/v4/setup/environment-variables#timezone).
+
 ```env
 DATABASE_URL=mysql://kener:password@localhost:3306/kener
 ```
+
+## Connection pool tuning {#connection-pool-tuning}
+
+For PostgreSQL and MySQL, Kener ships fail-fast, self-healing pool defaults: no permanently-idle connections, TCP keepalive on, and 15-second connection timeouts. This protects deployments on cloud networks (Railway, Docker Swarm overlays, Kubernetes) that silently drop idle TCP connections, which otherwise causes 500s after idle periods and can require a restart after a database outage.
+
+Kener uses **two separate pools** so background work cannot starve page loads: a **web pool** (`DATABASE_POOL_MAX`) for HTTP requests and a **worker pool** (`DATABASE_WORKER_POOL_MAX`) for background jobs (monitor checks, alerting, scheduled tasks). A burst of background jobs can only exhaust the worker pool, leaving the web pool free to serve requests.
+
+Override only if your setup needs it:
+
+| Variable                      | Description                                                     | Default |
+| ----------------------------- | --------------------------------------------------------------- | ------- |
+| `DATABASE_POOL_MIN`           | Minimum pool connections (0 lets idle connections be reclaimed) | `0`     |
+| `DATABASE_POOL_MAX`           | Max connections for the **web** (HTTP request) pool             | `10`    |
+| `DATABASE_WORKER_POOL_MAX`    | Max connections for the **worker** (background job) pool        | `5`     |
+| `DATABASE_ACQUIRE_TIMEOUT_MS` | How long a query waits for a free connection before failing     | `15000` |
+| `DATABASE_CREATE_TIMEOUT_MS`  | How long a new connection attempt waits before failing          | `15000` |
+| `DATABASE_IDLE_TIMEOUT_MS`    | How long a connection may sit idle before being closed          | `30000` |
+| `DATABASE_KEEPALIVE`          | TCP keepalive on connections (`true`/`false`)                   | `true`  |
+
+> [!IMPORTANT]
+> Budget your pools against the database's `max_connections`: `replicas × (DATABASE_POOL_MAX + DATABASE_WORKER_POOL_MAX)` must stay below it. On small managed Postgres tiers (often capped near 20–25 connections), keep the defaults or lower them. Each `GET /` fans out several queries, so a web pool that is too small causes `KnexTimeoutError` under concurrent traffic.
+
+> [!TIP]
+> If your database is slow to accept connections (cold starts, cross-region), raise `DATABASE_ACQUIRE_TIMEOUT_MS` and `DATABASE_CREATE_TIMEOUT_MS` instead of disabling keepalive or raising `DATABASE_POOL_MIN`.
+
+These variables have no effect on SQLite, which uses a single shared connection.
 
 ## Switching databases {#switching-databases}
 
@@ -103,9 +141,13 @@ DATABASE_URL=mysql://kener:password@localhost:3306/kener
 - Connection failed: verify host, port, credentials, firewall.
 - Migration failed: ensure DB exists and user can `CREATE`/`ALTER`.
 - SQLite write error: ensure directory exists and is writable.
+- `KnexTimeoutError: Timeout acquiring a connection`: every connection in the affected pool is busy, or the database is unreachable/too slow to accept new ones. If the database is healthy, raise the limit for the pool that timed out — `DATABASE_POOL_MAX` when page loads/HTTP requests fail, `DATABASE_WORKER_POOL_MAX` when background jobs (monitor checks, alerts) fail — within your `max_connections` budget. See [Connection pool tuning](#connection-pool-tuning). On PostgreSQL, if pool timeouts start after the database has been up for months, also check `monitoring_data` bloat — see [Maintenance](#postgresql-maintenance).
+- `Connection terminated unexpectedly` after idle periods: the network dropped an idle connection; keepalive (on by default) prevents this — verify `DATABASE_KEEPALIVE` is not set to `false`.
 
 ## Environment variables {#environment-variables}
 
 | Variable       | Description                | Default                               | Required |
 | -------------- | -------------------------- | ------------------------------------- | -------- |
 | `DATABASE_URL` | Database connection string | `sqlite://./database/kener.sqlite.db` | No       |
+
+Pool tuning variables are listed in [Connection pool tuning](#connection-pool-tuning).

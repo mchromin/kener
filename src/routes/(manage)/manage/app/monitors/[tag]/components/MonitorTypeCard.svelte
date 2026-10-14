@@ -11,8 +11,15 @@
   import type { GroupMonitorTypeData, MonitoringResult } from "$lib/server/types/monitor.js";
   import { MONITOR_TYPES, type MonitorType } from "$lib/types/monitor.js";
   import { toast } from "svelte-sonner";
-  import { ValidateIpAddress, IsValidHost, IsValidNameServer, IsValidURL, IsValidPort } from "$lib/clientTools";
-  import { GAMEDIG_SOCKET_TIMEOUT } from "$lib/anywhere";
+  import {
+    ValidateIpAddress,
+    IsValidHost,
+    IsValidNameServer,
+    IsValidDnsResolver,
+    IsValidURL,
+    IsValidPort
+  } from "$lib/clientTools";
+  import { GAMEDIG_SOCKET_TIMEOUT, DOCKER_CONNECTION_TYPES, DOCKER_CHECK_TYPES, IsValidProxyURL } from "$lib/anywhere";
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
   // Type-specific components
@@ -27,7 +34,9 @@
     MonitorGroup,
     MonitorGamedig,
     MonitorNone,
-    MonitorGrpc
+    MonitorGrpc,
+    MonitorPrometheus,
+    MonitorDocker
   } from "../types/index.js";
 
   interface Props {
@@ -109,7 +118,9 @@
     SQL: "Database",
     HEARTBEAT: "Heartbeat",
     GAMEDIG: "Game Server",
-    GRPC: "gRPC Health"
+    GRPC: "gRPC Health",
+    PROMETHEUS: "Prometheus",
+    DOCKER: "Docker Container"
   };
 
   // Validation for each monitor type
@@ -122,6 +133,7 @@
         if (!data.url) return false;
         if (!IsValidURL(data.url)) return false;
         if (!data.timeout || data.timeout < 1) return false;
+        if (data.proxy && !IsValidProxyURL(data.proxy)) return false;
         return true;
       }
 
@@ -153,7 +165,16 @@
         const data = typeData as any;
         if (!data.host || !IsValidHost(data.host)) return false;
         const nameServer = (data.nameServer || "").trim();
-        if (nameServer && !IsValidNameServer(nameServer)) return false;
+        const transport = data.transport || "UDP";
+        if (transport === "TLS") {
+          if (!nameServer || !IsValidDnsResolver(nameServer)) return false;
+          const tlsPort = Number(data.tlsPort ?? 853);
+          if (!IsValidPort(String(tlsPort))) return false;
+          const tlsServername = (data.tlsServername || "").trim();
+          if (tlsServername && !IsValidHost(tlsServername)) return false;
+        } else if (nameServer && !IsValidNameServer(nameServer)) {
+          return false;
+        }
         if (!data.lookupRecord) return false;
         if (!data.values || !Array.isArray(data.values) || data.values.length === 0) return false;
         const hasNonEmptyValue = data.values.some((val: string) => val && val.trim() !== "");
@@ -228,6 +249,42 @@
         if (!data.host) return false;
         if (!data.port || data.port < 1 || data.port > 65535) return false;
         if (!data.timeout || data.timeout < 1) return false;
+        return true;
+      }
+
+      case "PROMETHEUS": {
+        const data = typeData as any;
+        if (!data.url || !IsValidURL(data.url)) return false;
+        if (data.proxy && !IsValidProxyURL(data.proxy)) return false;
+        if (!data.query || !data.query.trim()) return false;
+        for (const key of ["down", "degraded"] as const) {
+          const t = data[key];
+          if (t !== undefined && t !== null) {
+            const validOp = [">", ">=", "<", "<=", "==", "!="].includes(t.operator);
+            if (!validOp || typeof t.value !== "number" || !Number.isFinite(t.value)) return false;
+          }
+        }
+        if (
+          data.timeout !== undefined &&
+          (typeof data.timeout !== "number" || !Number.isFinite(data.timeout) || data.timeout < 1)
+        )
+          return false;
+        return true;
+      }
+
+      case "DOCKER": {
+        const data = typeData as any;
+        const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+        if (!DOCKER_CONNECTION_TYPES.includes(data.connectionType)) return false;
+        if (!DOCKER_CHECK_TYPES.includes(data.checkType)) return false;
+        if (!text(data.daemon)) return false;
+        for (const key of ["tlsCa", "tlsCert", "tlsKey"]) {
+          if (data[key] != null && typeof data[key] !== "string") return false;
+        }
+        // Client certificate and key are a matched pair: both or neither.
+        if (!!text(data.tlsCert) !== !!text(data.tlsKey)) return false;
+        if (data.checkType === "container" && !text(data.containerName)) return false;
+        if (typeof data.timeout !== "number" || !Number.isFinite(data.timeout) || data.timeout < 1) return false;
         return true;
       }
 
@@ -340,6 +397,10 @@
         <MonitorGamedig bind:data={typeData} />
       {:else if monitor.monitor_type === "GRPC"}
         <MonitorGrpc bind:data={typeData} />
+      {:else if monitor.monitor_type === "PROMETHEUS"}
+        <MonitorPrometheus bind:data={typeData} />
+      {:else if monitor.monitor_type === "DOCKER"}
+        <MonitorDocker bind:data={typeData} />
       {:else if monitor.monitor_type === "NONE"}
         <MonitorNone bind:data={typeData} />
       {/if}

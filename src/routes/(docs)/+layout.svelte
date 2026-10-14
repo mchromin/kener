@@ -16,13 +16,12 @@
 <ModeWatcher />
 <Toaster />
 
-<main>
+<svelte:head>
+  <!-- Docs-only font. A <link> here rather than an @import in docs.css so it does not ride along in the
+       single CSS bundle and get fetched by every status page. -->
+  <link rel="stylesheet" href="https://fonts.bunny.net/css?family=geist:400,500,600,700|geist-mono:400,500" />
+</svelte:head>
+
+<main class="kener-docs">
   {@render children()}
 </main>
-
-<style>
-  /* Apply the global font family using the CSS variable */
-  * {
-    font-family: var(--font-family);
-  }
-</style>

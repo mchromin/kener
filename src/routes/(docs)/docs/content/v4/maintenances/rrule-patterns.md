@@ -18,71 +18,64 @@ FREQ=frequency[;INTERVAL=n][;BYDAY=days][;BYMONTHDAY=day][;COUNT=n][;UNTIL=date]
 ### Supported Components {#supported-components}
 
 **FREQ** (Required)
-title: RRULE Patterns
-description: Common RRULE patterns for recurring maintenance schedules
 
+- `DAILY` - Daily recurrence
 - `WEEKLY` - Weekly recurrence
 - `MONTHLY` - Monthly recurrence
-  Kener uses iCalendar RRULE strings to schedule recurring maintenances.
-  **INTERVAL** (Optional)
 
-## RRULE basics {#rrule-basics}
+**INTERVAL** (Optional)
 
 - Default: 1
-  Format:
+- Integer value: 2 = every other, 3 = every third, etc.
 
-```text
-FREQ=...;[INTERVAL=n];[BYDAY=...];[BYMONTHDAY=...]
-```
+**BYDAY** (Optional, for WEEKLY or MONTHLY with an ordinal prefix)
 
-For one-time maintenances, Kener uses:
+- Day codes: `MO`, `TU`, `WE`, `TH`, `FR`, `SA`, `SU`
+- Multiple days: `MO,WE,FR`
+- With MONTHLY, prefix a day code with an ordinal to mean "the Nth such weekday of the month": `1WE` (first Wednesday), `1SU` (first Sunday)
+
 **BYMONTHDAY** (Optional, for MONTHLY)
 
-```text
-FREQ=MINUTELY;COUNT=1
-```
-
 - Day of month: 1-31
+- Example: `BYMONTHDAY=1` (first of month)
 
-## Common patterns {#common-patterns}
+**COUNT** (For one-time only)
 
-| Use case                | RRULE                              |
-| ----------------------- | ---------------------------------- |
-| Every day               | `FREQ=DAILY`                       |
-| Every Sunday            | `FREQ=WEEKLY;BYDAY=SU`             |
-| Weekdays                | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` |
-| Every 2 weeks on Monday | `FREQ=WEEKLY;INTERVAL=2;BYDAY=MO`  |
-| First day of each month | `FREQ=MONTHLY;BYMONTHDAY=1`        |
-
+- `COUNT=1` - Single occurrence
 - Used for one-time maintenances
-
-## Day codes {#day-codes}
 
 ## Common Patterns {#common-patterns}
 
-- `MO` Monday
-- `TU` Tuesday
-- `WE` Wednesday
-- `TH` Thursday
-- `FR` Friday
-- `SA` Saturday
-- `SU` Sunday
+### Daily Patterns {#daily-patterns}
 
-## Tips {#tips}
+#### Every Day {#every-day}
 
-- Use simple, readable patterns.
-- Verify next occurrences in the maintenance UI preview.
-- Avoid overlapping schedules for the same monitor.
-  **Description:** Maintenance occurs every single day at the configured time
+**RRULE:** `FREQ=DAILY`
 
-## Related guides {#related-guides}
+**Description:** Maintenance occurs every single day at the configured time
 
 **Use Case:** Daily backup windows, nightly cleanup tasks
 
-- [Creating and Managing Maintenances](/docs/v4/maintenances/creating-managing)
-- [Maintenance Events](/docs/v4/maintenances/events)
-- [Maintenances Overview](/docs/v4/maintenances/overview)
-  **Description:** Maintenance occurs every 2 days
+**Example:**
+
+```
+Title: Nightly Database Backup
+Start: 2:00 AM (any day)
+RRULE: FREQ=DAILY
+Duration: 30 minutes
+
+Occurrences:
+- Today at 2:00 AM
+- Tomorrow at 2:00 AM
+- Day after at 2:00 AM
+- Continues daily...
+```
+
+#### Every Other Day {#every-other-day}
+
+**RRULE:** `FREQ=DAILY;INTERVAL=2`
+
+**Description:** Maintenance occurs every 2 days
 
 **Use Case:** Bi-daily tasks
 
@@ -248,6 +241,29 @@ Occurrences:
 - Continues monthly...
 ```
 
+#### Nth Day-of-Week of Month (Ordinal BYDAY) {#first-weekday-of-month}
+
+**RRULE:** `FREQ=MONTHLY;BYDAY=1WE`
+
+**Description:** Maintenance occurs on the first Wednesday of each month
+
+**Use Case:** Monthly patch windows tied to a specific weekday
+
+**Example:**
+
+```
+Title: Monthly Patch Window
+Start: June 3, 2026 at 2:30 PM
+RRULE: FREQ=MONTHLY;BYDAY=1WE
+Duration: 90 minutes
+
+Occurrences:
+- Jun 3, 2026 at 2:30 PM
+- Jul 1, 2026 at 2:30 PM
+- Aug 5, 2026 at 2:30 PM
+- Continues monthly...
+```
+
 #### Middle of Month {#middle-of-month}
 
 **RRULE:** `FREQ=MONTHLY;BYMONTHDAY=15`
@@ -370,15 +386,16 @@ Affected Monitors:
 Title: Monthly Security Updates
 Description: Critical security patches and system updates
 Start Date: Sunday, June 4, 2026 at 2:00 AM
-RRULE: FREQ=MONTHLY;BYMONTHDAY=1
+RRULE: FREQ=MONTHLY;BYDAY=1SU
 Duration: 3600 seconds (1 hour)
 Affected Monitors:
     - All Servers: MAINTENANCE
 ```
 
-**Note:** Since RRULE doesn't support "first Sunday", use BYMONTHDAY=1 and choose first occurrence that falls on Sunday, or use BYDAY with ordinal (not supported in Kener UI currently).
+**Note:** Use ordinal weekday syntax in `BYDAY` for "first X weekday" patterns:
 
-**Workaround:** Create as weekly and manage manually or use BYMONTHDAY for specific date.
+- First Sunday: `BYDAY=1SU`
+- First Wednesday: `BYDAY=1WE`
 
 ### Example 4: Business Hours Backup {#example-backup}
 
@@ -477,6 +494,7 @@ Start: 2:00 AM UTC
 ✅ `FREQ=WEEKLY;BYDAY=MO,WE,FR`
 ✅ `FREQ=WEEKLY;INTERVAL=2;BYDAY=SU`
 ✅ `FREQ=MONTHLY;BYMONTHDAY=1`
+✅ `FREQ=MONTHLY;BYDAY=1WE`
 ✅ `FREQ=MINUTELY;COUNT=1`
 
 ### Invalid RRULEs {#invalid-rrules}
@@ -610,6 +628,7 @@ Description: |
 | Every Sunday      | `FREQ=WEEKLY;BYDAY=SU`                 |
 | Bi-weekly Mondays | `FREQ=WEEKLY;INTERVAL=2;BYDAY=MO`      |
 | First of month    | `FREQ=MONTHLY;BYMONTHDAY=1`            |
+| First Wednesday   | `FREQ=MONTHLY;BYDAY=1WE`               |
 | 15th of month     | `FREQ=MONTHLY;BYMONTHDAY=15`           |
 | Quarterly         | `FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=1` |
 
@@ -625,6 +644,6 @@ Description: |
 
 ## Next Steps {#next-steps}
 
-- [Creating and Managing Maintenances](/docs/maintenances/creating-managing) - Apply these patterns in the dashboard
-- [Maintenance Events](/docs/maintenances/events) - Understand how RRULE generates events
-- [Maintenance Overview](/docs/maintenances/overview) - Learn maintenance fundamentals
+- [Creating and Managing Maintenances](/docs/v4/maintenances/creating-managing) - Apply these patterns in the dashboard
+- [Maintenance Events](/docs/v4/maintenances/events) - Understand how RRULE generates events
+- [Maintenance Overview](/docs/v4/maintenances/overview) - Learn maintenance fundamentals

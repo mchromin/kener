@@ -12,14 +12,22 @@
   import clientResolver from "$lib/client/resolver.js";
 
   let { children, data } = $props();
+
+  const rssHref = $derived.by(() => {
+    const params = page.params;
+    if (params.monitor_tag) return clientResolver(resolve, `/monitors/${params.monitor_tag}/rss.xml`);
+    if (params.page_path) return clientResolver(resolve, `/${params.page_path}/rss.xml`);
+    return clientResolver(resolve, "/rss.xml");
+  });
 </script>
 
-<ModeWatcher />
+<ModeWatcher defaultMode={data.defaultSiteTheme as "light" | "dark" | "system"} />
 
 <Toaster />
 
 <svelte:head>
   <link rel="icon" href={data.favicon} />
+  <link rel="alternate" type="application/rss+xml" title="RSS feed" href={rssHref} />
   {#if data.font?.cssSrc}
     <link rel="stylesheet" href={data.font.cssSrc} />
   {/if}
@@ -46,7 +54,7 @@
 	</style>`}
   <script src={clientResolver(resolve, "/capture.js")}></script>
 </svelte:head>
-<main class="kener-public">
+<main class="kener-public status-page-app">
   <!-- Nav -->
   <KenerNav />
   <!-- Body -->

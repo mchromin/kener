@@ -1,15 +1,9 @@
 import { json, type RequestHandler } from "@sveltejs/kit";
+import { parseDbTimestamp } from "$lib/server/tool";
 import db from "$lib/server/db/db";
 import type { GetMaintenanceEventsListResponse, MaintenanceEventResponse } from "$lib/types/api";
-
-function formatDateToISO(date: Date | string): string {
-  if (date instanceof Date) {
-    return date.toISOString();
-  }
-  // Handle string dates (e.g., from SQLite: "2026-01-27 16:07:19")
-  const parsed = new Date(date.replace(" ", "T") + "Z");
-  return parsed.toISOString();
-}
+import { GetSiteURL } from "$lib/server/controllers/siteDataController";
+import serverResolver from "$lib/server/resolver";
 
 export const GET: RequestHandler = async ({ locals, url }) => {
   // Maintenance is validated by middleware and available in locals
@@ -31,14 +25,16 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   const paginatedEvents = allEvents.slice(offset, offset + limit);
 
   // Build response
+  const siteUrl = await GetSiteURL();
   const events: MaintenanceEventResponse[] = paginatedEvents.map((event) => ({
     id: event.id,
     maintenance_id: event.maintenance_id,
     start_date_time: event.start_date_time,
     end_date_time: event.end_date_time,
-    status: event.status as "SCHEDULED" | "ONGOING" | "COMPLETED" | "CANCELLED",
-    created_at: formatDateToISO(event.created_at),
-    updated_at: formatDateToISO(event.updated_at),
+    status: event.status as MaintenanceEventResponse["status"],
+    created_at: parseDbTimestamp(event.created_at).toISOString(),
+    updated_at: parseDbTimestamp(event.updated_at).toISOString(),
+    url: siteUrl + serverResolver(`/maintenances/${event.id}`),
   }));
 
   const response: GetMaintenanceEventsListResponse = {

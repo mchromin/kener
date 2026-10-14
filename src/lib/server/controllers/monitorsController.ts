@@ -21,13 +21,15 @@ import type {
 import type { MonitorFilter } from "../db/repositories/base.js";
 import db from "../db/db.js";
 import type { PaginationInput } from "../../types/common.js";
-import type { DayWiseStatus, NumberWithChange } from "../../types/monitor.js";
 import GC, { getBadgeStyle, type BadgeStyle } from "../../global-constants.js";
+import type { MonitoringStatus } from "../../types/status.js";
 import { makeBadge } from "badge-maker";
 import { ErrorSvg } from "../../anywhere.js";
 import { GetLastMonitoringValue, SetLastHeartbeat, DeleteMonitorCaches } from "../cache/setGet.js";
+import { CollapseStatusCounts } from "../../clientTools.js";
 import { translate, isLocaleAvailable } from "../i18n.js";
 import type { HeartbeatMonitor, GroupMonitorTypeData } from "../types/monitor.js";
+import { IsValidProxyURL } from "../../anywhere.js";
 
 interface GroupUpdateData {
   monitor_tag: string;
@@ -92,6 +94,7 @@ interface MonitoringDataInput {
   latency?: number;
   type: string;
   error_message?: string | null;
+  raw_status?: string | null;
 }
 
 interface InterpolatedDataEntry {
@@ -112,6 +115,7 @@ export const InsertMonitoringData = async (data: MonitoringDataInput): Promise<M
     latency: data.latency || 0,
     type: data.type,
     error_message: data.error_message,
+    raw_status: data.raw_status,
   });
 };
 
@@ -190,8 +194,32 @@ export const GetMonitorsParsed = async (query: MonitorFilter): Promise<Array<Mon
   return parsedMonitors;
 };
 
+/**
+ * type_data.proxy must be a valid http(s):// URL. Node silently ignores any other scheme and
+ * throws on a malformed authority, both at check time, so save is where a typo has to fail.
+ * `$SECRET` tokens are still raw here and pass. Unparseable type_data is not this check's problem.
+ */
+function validateTypeDataProxy(monitor: MonitorInput): void {
+  if (!monitor.type_data) return;
+  let typeData: unknown;
+  try {
+    typeData = typeof monitor.type_data === "string" ? JSON.parse(monitor.type_data) : monitor.type_data;
+  } catch {
+    return;
+  }
+  // type_data is parsed JSON, so `proxy` can be any type. Absent or blank means no proxy;
+  // anything else - an object or a number included - has to be a proxy URL.
+  const proxy = (typeData as { proxy?: unknown } | null)?.proxy;
+  if (proxy === undefined || proxy === null) return;
+  if (typeof proxy === "string" && proxy.trim() === "") return;
+  if (!IsValidProxyURL(proxy)) {
+    throw new Error("Proxy URL must be a valid http:// or https:// URL");
+  }
+}
+
 export const CreateUpdateMonitor = async (monitor: MonitorInput): Promise<number | number[]> => {
   let monitorData = { ...monitor };
+  validateTypeDataProxy(monitorData);
   if (monitorData.id) {
     return await db.updateMonitor(monitorData as MonitorRecord);
   } else {
@@ -206,6 +234,7 @@ export const CreateMonitor = async (monitor: MonitorInput): Promise<number[]> =>
     throw new Error("monitor id must be empty or 0");
   }
   validateMonitorTag(monitorData.tag);
+  validateTypeDataProxy(monitorData);
   return await db.insertMonitor(monitorData);
 };
 
@@ -264,6 +293,7 @@ export const CloneMonitor = async ({ sourceTag, newTag, newName }: CloneMonitorI
     type_data: source.type_data,
     day_degraded_minimum_count: source.day_degraded_minimum_count,
     day_down_minimum_count: source.day_down_minimum_count,
+    confirmation_threshold: source.confirmation_threshold,
     include_degraded_in_downtime: source.include_degraded_in_downtime,
     is_hidden: source.is_hidden,
     monitor_settings_json: source.monitor_settings_json,
@@ -290,7 +320,7 @@ export const GetLatestMonitoringData = async (monitor_tag: string): Promise<Moni
 };
 export const GetLatestStatusActiveAll = async (): Promise<{ status: string }> => {
   //get all the active not hidden monitor tags
-  const monitors = await db.getMonitors({ status: "ACTIVE", is_hidden: "NO" });
+  const monitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
   const monitor_tags = monitors.map((m) => m.tag);
 
   const latestData: MonitoringData[] = [];
@@ -302,19 +332,20 @@ export const GetLatestStatusActiveAll = async (): Promise<{ status: string }> =>
     }
   }
 
-  let status: string = GC.NO_DATA;
-  for (let i = 0; i < latestData.length; i++) {
-    //if any status is down then status = down, if any is degraded then status = degraded, down > degraded > up
-    if (latestData[i].status === GC.DOWN) {
-      status = GC.DOWN;
-    } else if (latestData[i].status === GC.DEGRADED && status !== GC.DOWN) {
-      status = GC.DEGRADED;
-    } else if (latestData[i].status === GC.UP && status !== GC.DOWN && status !== GC.DEGRADED) {
-      status = GC.UP;
+  const counts = { countOfUp: 0, countOfDown: 0, countOfDegraded: 0, countOfMaintenance: 0 };
+  for (const data of latestData) {
+    if (data.status === GC.UP) {
+      counts.countOfUp++;
+    } else if (data.status === GC.DOWN) {
+      counts.countOfDown++;
+    } else if (data.status === GC.DEGRADED) {
+      counts.countOfDegraded++;
+    } else if (data.status === GC.MAINTENANCE) {
+      counts.countOfMaintenance++;
     }
   }
   return {
-    status: status,
+    status: CollapseStatusCounts(counts),
   };
 };
 
@@ -419,6 +450,7 @@ async function removeTagFromGroupMonitors(tag: string): Promise<void> {
       type_data: JSON.stringify(typeData),
       day_degraded_minimum_count: group.day_degraded_minimum_count,
       day_down_minimum_count: group.day_down_minimum_count,
+      confirmation_threshold: group.confirmation_threshold,
       include_degraded_in_downtime: group.include_degraded_in_downtime,
       is_hidden: group.is_hidden,
       monitor_settings_json:
@@ -436,6 +468,7 @@ export const DeleteMonitorCompletelyUsingTag = async (tag: string): Promise<numb
   await db.deleteMonitorDataByTag(tag);
   await db.deleteIncidentMonitorsByTag(tag);
   await db.deleteMonitorAlertsByTag(tag);
+  await db.deleteMonitorAlertConfigsByMonitorTag(tag);
   await db.deletePageMonitorsByTag(tag);
   await db.deleteMaintenanceMonitorsByTag(tag);
   await removeTagFromGroupMonitors(tag);
@@ -461,9 +494,6 @@ export const GetAllAlertsPaginated = async (
 export const GetMonitoringData = async (tag: string, since: number, now: number): Promise<MonitoringData[]> => {
   return await db.getMonitoringData(tag, since, now);
 };
-export const GetMonitoringDataAll = async (tags: string[], since: number, now: number): Promise<MonitoringData[]> => {
-  return await db.getMonitoringDataAll(tags, since, now);
-};
 
 export const InsertNewAlert = async (data: MonitorAlertInsert): Promise<MonitorAlert | undefined> => {
   if (await db.alertExists(data.monitor_tag, data.monitor_status, data.alert_status)) {
@@ -487,7 +517,7 @@ export const GetStatusCountsByInterval = async (
 export const GetMonitoringDataPaginated = async (
   page: number,
   limit: number,
-  filter?: { monitor_tag?: string; start_time?: number; end_time?: number },
+  filter?: { monitor_tag?: string; status?: MonitoringStatus; start_time?: number; end_time?: number },
 ): Promise<{ data: MonitoringData[]; total: number }> => {
   const data = await db.getMonitoringDataPaginated(page, limit, filter);
   const countResult = await db.getMonitoringDataCount(filter);
@@ -547,7 +577,7 @@ export const GetBadge = async (badgeType: BadgeType, params: BadgeParams): Promi
       lastObj = await GetLatestStatusActiveAll();
     } else {
       // Single monitor status
-      const monitors = await GetMonitorsParsed({ tag, status: "ACTIVE", is_hidden: "NO" });
+      const monitors = await GetMonitorsParsed({ tag, status: GC.ACTIVE, is_hidden: GC.NO });
       if (monitors.length === 0) {
         return new Response(ErrorSvg, {
           headers: { "Content-Type": "image/svg+xml" },
@@ -635,14 +665,14 @@ export const GetBadge = async (badgeType: BadgeType, params: BadgeParams): Promi
       const siteData = await db.getSiteDataByKey("siteName");
       const siteName = siteData?.value as string | undefined;
       name = siteName || "All Monitors";
-      const goodMonitors = await GetMonitorsParsed({ status: "ACTIVE", is_hidden: "NO" });
+      const goodMonitors = await GetMonitorsParsed({ status: GC.ACTIVE, is_hidden: GC.NO });
       const activeTags = goodMonitors.map((monitor) => monitor.tag);
 
       stats = await db.getStatusCountsByInterval(activeTags, since, now - since, 1);
       uptimeData = UptimeCalculator(stats);
     } else {
       // Single monitor badge
-      const monitors = await GetMonitorsParsed({ tag });
+      const monitors = await GetMonitorsParsed({ tag, status: GC.ACTIVE, is_hidden: GC.NO });
       if (monitors.length === 0) {
         return new Response(ErrorSvg, {
           headers: { "Content-Type": "image/svg+xml" },
@@ -750,4 +780,7 @@ export const GetStatusCountsByIntervalGroupedByMonitor = async (
   );
   await setCache(cacheKey, result, 60);
   return result;
+};
+export const GetLastKnownStatus = async (monitor_tag: string): Promise<MonitoringData | undefined> => {
+  return await db.getLastKnownStatus(monitor_tag);
 };
