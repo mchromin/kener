@@ -1,10 +1,10 @@
 import { Queue, Worker, Job, type JobSchedulerTemplateOptions } from "bullmq";
 import q from "../queues/q.js";
 import db from "../db/db.js";
-import { rrulestr } from "rrule";
 import { addDays } from "date-fns";
-import type { MaintenanceRecord, MaintenanceEventRecord } from "../types/db.js";
-import { determineEventStatus, CreateMaintenanceEventWithNotification } from "../controllers/maintenanceController.js";
+import type { MaintenanceRecord } from "../types/db.js";
+import { CreateMaintenanceEventWithNotification } from "../controllers/maintenanceController.js";
+import { getOccurrencesBetween } from "../../maintenanceRecurrence.js";
 
 let maintenanceSchedulerQueue: Queue | null = null;
 let worker: Worker | null = null;
@@ -19,8 +19,9 @@ const getQueue = () => {
 };
 
 /**
- * Generate maintenance events for the next 7 days based on the RRULE
- * All dates are stored in UTC
+ * Generate maintenance events for the next 7 days based on the RRULE.
+ * Events are stored as UTC timestamps, but the recurrence is expanded in the
+ * maintenance's own timezone so the wall-clock time stays stable across DST.
  */
 const generateEventsForMaintenance = async (maintenance: MaintenanceRecord): Promise<number> => {
   let eventsCreated = 0;
@@ -30,30 +31,25 @@ const generateEventsForMaintenance = async (maintenance: MaintenanceRecord): Pro
     return eventsCreated;
   }
 
-  // Convert start timestamp to Date (UTC)
-  const dtstart = new Date(maintenance.start_date_time * 1000);
-
   // Define the window to generate events (now to 7 days ahead)
   const now = new Date();
   const windowEnd = addDays(now, 7);
 
   try {
-    // Build the full RRULE string with DTSTART
-    const fullRrule = `DTSTART:${dtstart.toISOString().replace(/[-:]/g, "").split(".")[0]}Z\nRRULE:${maintenance.rrule}`;
-
-    // Parse the RRULE
-    const rule = rrulestr(fullRrule);
-
-    // Get all occurrences in the window
-    const occurrences = rule.between(now, windowEnd, true);
+    const occurrences = getOccurrencesBetween(
+      maintenance.start_date_time,
+      maintenance.rrule,
+      maintenance.timezone,
+      now,
+      windowEnd,
+    );
 
     // Get existing events to avoid duplicates
     const existingEvents = await db.getMaintenanceEventsByMaintenanceId(maintenance.id);
     const existingStartTimes = new Set(existingEvents.map((e) => e.start_date_time));
 
     // Create events for each occurrence that doesn't exist
-    for (const occurrence of occurrences) {
-      const eventStart = Math.floor(occurrence.getTime() / 1000);
+    for (const eventStart of occurrences) {
       const eventEnd = eventStart + maintenance.duration_seconds;
 
       // Check if event already exists for this start time
