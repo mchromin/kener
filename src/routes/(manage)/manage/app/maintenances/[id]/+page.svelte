@@ -10,6 +10,8 @@
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
+  import * as Command from "$lib/components/ui/command/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
   import * as Breadcrumb from "$lib/components/ui/breadcrumb/index.js";
   import * as RadioGroup from "$lib/components/ui/radio-group/index.js";
   import SaveIcon from "@lucide/svelte/icons/save";
@@ -21,6 +23,8 @@
   import InfoIcon from "@lucide/svelte/icons/info";
   import ClockIcon from "@lucide/svelte/icons/clock";
   import CheckCircleIcon from "@lucide/svelte/icons/check-circle";
+  import CheckIcon from "@lucide/svelte/icons/check";
+  import GlobeIcon from "@lucide/svelte/icons/globe";
   import PlayCircleIcon from "@lucide/svelte/icons/play-circle";
   import XCircleIcon from "@lucide/svelte/icons/x-circle";
   import type { PageProps } from "./$types";
@@ -29,12 +33,13 @@
   import { goto } from "$app/navigation";
   import { toast } from "svelte-sonner";
   import { formatDistanceToNow, isPast, isFuture, isWithinInterval } from "date-fns";
+  import { formatInTimeZone } from "date-fns-tz";
   import LocalTime from "$lib/components/LocalTime.svelte";
   import { rrulestr } from "rrule";
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
-  import { selectedTimezone } from "$lib/stores/timezone";
-  import { formatDate } from "$lib/stores/datetime";
+  import { selectedTimezone, timezone as timezoneStore } from "$lib/stores/timezone";
+  import { getNextOccurrences, normalizeTimezone } from "$lib/maintenanceRecurrence";
   import {
     timestampToDatetimeLocalAtTz,
     datetimeLocalToTimestampAtTz,
@@ -85,11 +90,19 @@
 
   // For datetime input.
   // Source of truth is the absolute timestamp; the datetime-local string is derived
-  // from it in the user's selected timezone so switching timezones re-renders the
-  // field instead of silently reinterpreting it in the browser's timezone.
+  // from it in the maintenance's own timezone, which is also what the recurrence is
+  // anchored to. Entering "18:00 in America/Los_Angeles" therefore stays 18:00 there
+  // even after a daylight saving transition.
   let startTs = $state<number | null>(null);
-  const startDateTimeLocal = $derived(startTs === null ? "" : timestampToDatetimeLocalAtTz(startTs, $selectedTimezone));
-  const timezoneLabel = $derived(getTimezoneOffsetLabel($selectedTimezone, startTs ?? undefined));
+
+  // Timezone the recurrence is anchored to. Defaults to the timezone the admin is
+  // currently viewing the app in; existing maintenances keep whatever was saved.
+  let maintenanceTimezone = $state<string>("");
+  let timezonePickerOpen = $state(false);
+
+  const effectiveTimezone = $derived(normalizeTimezone(maintenanceTimezone || $selectedTimezone));
+  const startDateTimeLocal = $derived(startTs === null ? "" : timestampToDatetimeLocalAtTz(startTs, effectiveTimezone));
+  const timezoneLabel = $derived(getTimezoneOffsetLabel(effectiveTimezone, startTs ?? undefined));
 
   function handleStartDateTimeInput(e: Event) {
     const target = e.currentTarget as HTMLInputElement;
@@ -97,7 +110,18 @@
       startTs = null;
       return;
     }
-    startTs = datetimeLocalToTimestampAtTz(target.value, $selectedTimezone);
+    startTs = datetimeLocalToTimestampAtTz(target.value, effectiveTimezone);
+  }
+
+  function handleTimezoneSelect(tz: string) {
+    // Keep the wall-clock time the user typed and reinterpret it in the new timezone,
+    // which is what "this window happens at 18:00 local time" means in practice.
+    const wallClock = startDateTimeLocal;
+    maintenanceTimezone = tz;
+    if (wallClock) {
+      startTs = datetimeLocalToTimestampAtTz(wallClock, tz);
+    }
+    timezonePickerOpen = false;
   }
 
   // Duration inputs (for easier UI)
@@ -201,21 +225,12 @@
     }
 
     try {
-      const dtstart = new Date(startTs * 1000);
-      const fullRrule = `DTSTART:${dtstart.toISOString().replace(/[-:]/g, "").split(".")[0]}Z\nRRULE:${customRrule}`;
-      const rule = rrulestr(fullRrule);
-      const occurrences: Date[] = [];
-      let searchFrom = new Date();
-
-      for (let i = 0; i < 5; i++) {
-        const next = rule.after(searchFrom, i === 0);
-        if (!next) break;
-        occurrences.push(next);
-        searchFrom = next;
-      }
-
-      // Render the preview in the selected timezone so it matches the status page.
-      return occurrences.map((d) => $formatDate(d, "EEE, MMM d, yyyy 'at' h:mm a"));
+      // Same expansion the server uses, so the preview matches the generated events —
+      // including the wall-clock time staying put across DST transitions.
+      const occurrences = getNextOccurrences(startTs, customRrule, effectiveTimezone, new Date(), 5);
+      return occurrences.map(
+        (ts) => `${formatInTimeZone(new Date(ts * 1000), effectiveTimezone, "EEE, MMM d, yyyy 'at' h:mm a")}`
+      );
     } catch (e) {
       return [];
     }
@@ -266,6 +281,7 @@
     if (isNew) {
       // Set default start time (1 hour from now)
       startTs = Math.floor(Date.now() / 1000) + 3600;
+      maintenanceTimezone = $selectedTimezone;
       loading = false;
       return;
     }
@@ -298,6 +314,7 @@
 
         // Set UI values
         startTs = result.start_date_time;
+        maintenanceTimezone = result.timezone || "UTC";
         updateDurationInputs(result.duration_seconds);
 
         // Set monitors with their statuses
@@ -373,6 +390,7 @@
           start_date_time: startTime,
           rrule,
           duration_seconds: calculatedDurationSeconds,
+          timezone: effectiveTimezone,
           monitors: selectedMonitors.map((m) => ({ monitor_tag: m.tag, monitor_impact: m.status })),
           is_global: maintenance.is_global
         };
@@ -397,6 +415,7 @@
           start_date_time: startTime,
           rrule,
           duration_seconds: calculatedDurationSeconds,
+          timezone: effectiveTimezone,
           status: maintenance.status,
           monitors: selectedMonitors.map((m) => ({ monitor_tag: m.tag, monitor_impact: m.status })),
           is_global: maintenance.is_global
@@ -703,18 +722,56 @@
             {scheduleType === "ONE_TIME" ? "Start Date/Time" : "First Occurrence Date/Time"}
             <span class="text-destructive">*</span>
           </Label>
-          <Input id="start-time" type="datetime-local" value={startDateTimeLocal} oninput={handleStartDateTimeInput} />
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              id="start-time"
+              type="datetime-local"
+              class="sm:max-w-xs"
+              value={startDateTimeLocal}
+              oninput={handleStartDateTimeInput}
+            />
+            <Popover.Root bind:open={timezonePickerOpen}>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={timezonePickerOpen}
+                    class="justify-between font-normal sm:w-64"
+                  >
+                    <span class="truncate">{effectiveTimezone}</span>
+                    <GlobeIcon class="size-4 shrink-0 opacity-60" />
+                  </Button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Content class="w-[280px] p-0">
+                <Command.Root>
+                  <Command.Input placeholder="Search timezone..." />
+                  <Command.List class="max-h-60">
+                    <Command.Empty>No timezone found.</Command.Empty>
+                    <Command.Group>
+                      {#each $timezoneStore.availableTimezones as tz (tz)}
+                        <Command.Item value={tz} onSelect={() => handleTimezoneSelect(tz)} class="text-xs">
+                          <CheckIcon class="me-2 size-4 {effectiveTimezone !== tz ? 'text-transparent' : ''}" />
+                          {tz}
+                        </Command.Item>
+                      {/each}
+                    </Command.Group>
+                  </Command.List>
+                </Command.Root>
+              </Popover.Content>
+            </Popover.Root>
+          </div>
           <p class="text-muted-foreground text-xs">
-            Times are entered and shown in <span class="font-medium">{$selectedTimezone}</span>
+            Times are entered and shown in <span class="font-medium">{effectiveTimezone}</span>
             {timezoneLabel ? `(${timezoneLabel})` : ""}. Stored internally as UTC.
           </p>
           {#if scheduleType === "RECURRING"}
             <p class="text-muted-foreground text-xs">
-              Recurring maintenances will occur at this same time of day. The date pattern is configured below.
-            </p>
-            <p class="text-muted-foreground text-xs">
-              Note: occurrences are anchored to UTC, so the local time shifts by an hour across daylight saving
-              transitions.
+              Recurring maintenances will occur at this same local time of day in
+              <span class="font-medium">{effectiveTimezone}</span>, including across daylight saving transitions. The
+              date pattern is configured below.
             </p>
           {/if}
         </div>

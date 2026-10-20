@@ -559,6 +559,7 @@ export interface MaintenanceRecord {
   start_date_time: number; // Unix timestamp - when the first occurrence starts
   rrule: string; // iCalendar RRULE string (e.g., FREQ=WEEKLY;BYDAY=SU or FREQ=MINUTELY;COUNT=1)
   duration_seconds: number; // Duration of each maintenance window in seconds
+  timezone: string; // IANA timezone the recurrence wall-clock time is anchored to
   status: "ACTIVE" | "INACTIVE";
   created_at: DbTimestamp;
   updated_at: DbTimestamp;
@@ -571,6 +572,7 @@ export interface MaintenanceRecordInsert {
   start_date_time: number;
   rrule: string;
   duration_seconds: number;
+  timezone?: string;
   status?: "ACTIVE" | "INACTIVE";
   is_global?: string;
 }

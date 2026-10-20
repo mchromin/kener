@@ -1,5 +1,4 @@
 import db from "../db/db.js";
-import { RRule, rrulestr } from "rrule";
 import { addDays, formatDistanceStrict } from "date-fns";
 import type {
   MaintenanceRecord,
@@ -13,6 +12,12 @@ import type {
   MaintenanceEventsMonitorList,
 } from "../types/db.js";
 import { GetMinuteStartNowTimestampUTC } from "../tool.js";
+import {
+  getOccurrencesBetween,
+  getNextOccurrences,
+  normalizeTimezone,
+  DEFAULT_MAINTENANCE_TIMEZONE,
+} from "../../maintenanceRecurrence.js";
 import { maintenanceToVariables, siteDataToVariables } from "../notification/notification_utils.js";
 import { GetAllSiteData } from "./controller.js";
 import subscriberQueue from "../queues/subscriberQueue.js";
@@ -32,6 +37,7 @@ export interface CreateMaintenanceInput {
   start_date_time: number; // Unix timestamp - when the first occurrence starts
   rrule: string; // iCalendar RRULE string (e.g., FREQ=WEEKLY;BYDAY=SU or FREQ=MINUTELY;COUNT=1)
   duration_seconds: number; // Duration of each maintenance window in seconds
+  timezone?: string; // IANA timezone the recurrence wall-clock time is anchored to
   // Monitors with their status during maintenance
   monitors?: MonitorWithStatusInput[];
   is_global?: string;
@@ -43,6 +49,7 @@ export interface UpdateMaintenanceInput {
   start_date_time?: number;
   rrule?: string;
   duration_seconds?: number;
+  timezone?: string;
   status?: "ACTIVE" | "INACTIVE";
   monitors?: MonitorWithStatusInput[];
   is_global?: string;
@@ -160,6 +167,7 @@ export const CreateMaintenanceEventWithNotification = async (
  * @param rrule - The RRULE string (e.g., FREQ=WEEKLY;BYDAY=SU)
  * @param duration_seconds - Duration of each maintenance window
  * @param count - Maximum number of events to create (default 1)
+ * @param timezone - IANA timezone the recurrence is anchored to (defaults to UTC)
  */
 export const GenerateMaintenanceEvents = async (
   maintenance_id: number,
@@ -167,38 +175,27 @@ export const GenerateMaintenanceEvents = async (
   rrule: string,
   duration_seconds: number,
   count: number = 1,
+  timezone: string = DEFAULT_MAINTENANCE_TIMEZONE,
 ): Promise<MaintenanceEventRecord[]> => {
   const createdEvents: MaintenanceEventRecord[] = [];
 
-  // Convert start timestamp to Date (UTC)
-  const dtstart = new Date(start_date_time * 1000);
-
+  const tz = normalizeTimezone(timezone);
   const now = new Date();
 
   try {
-    // Build the full RRULE string with DTSTART
-    const fullRrule = `DTSTART:${dtstart.toISOString().replace(/[-:]/g, "").split(".")[0]}Z\nRRULE:${rrule}`;
-
-    // Parse the RRULE
-    const rule = rrulestr(fullRrule);
-
-    // Get occurrences based on count
-    let occurrences: Date[] = [];
+    // Occurrence start timestamps (Unix seconds)
+    let occurrences: number[] = [];
 
     if (rrule.includes("COUNT=1")) {
       // One-time maintenance: only create event if start_date_time is recent or in the future
+      const dtstart = new Date(start_date_time * 1000);
       if (dtstart >= now || dtstart >= addDays(now, -1)) {
-        occurrences = [dtstart];
+        occurrences = [start_date_time];
       }
     } else {
-      // Recurring: get the next `count` occurrences from now
-      let searchFrom = now;
-      for (let i = 0; i < count; i++) {
-        const next = rule.after(searchFrom, i === 0);
-        if (!next) break;
-        occurrences.push(next);
-        searchFrom = new Date(next.getTime() + 1000);
-      }
+      // Recurring: expand in the maintenance timezone so the wall-clock time is stable
+      // across daylight saving transitions.
+      occurrences = getNextOccurrences(start_date_time, rrule, tz, now, count);
     }
 
     // Fetch maintenance info for notifications
@@ -207,8 +204,7 @@ export const GenerateMaintenanceEvents = async (
     const maintenanceDescription = maintenance?.description || null;
 
     // Create events for each occurrence
-    for (const occurrence of occurrences) {
-      const eventStart = Math.floor(occurrence.getTime() / 1000);
+    for (const eventStart of occurrences) {
       const eventEnd = eventStart + duration_seconds;
 
       // Check if event already exists for this time
@@ -251,12 +247,14 @@ export const CreateMaintenance = async (data: CreateMaintenanceInput): Promise<{
   }
 
   // Create the maintenance record
+  const timezone = normalizeTimezone(data.timezone);
   const maintenance = await db.createMaintenance({
     title: data.title,
     description: data.description || null,
     start_date_time: data.start_date_time,
     rrule: data.rrule,
     duration_seconds: data.duration_seconds,
+    timezone,
     status: "ACTIVE",
     is_global: data.is_global || "YES",
   });
@@ -267,7 +265,7 @@ export const CreateMaintenance = async (data: CreateMaintenanceInput): Promise<{
   }
 
   // Generate initial events
-  await GenerateMaintenanceEvents(maintenance.id, data.start_date_time, data.rrule, data.duration_seconds, 1);
+  await GenerateMaintenanceEvents(maintenance.id, data.start_date_time, data.rrule, data.duration_seconds, 1, timezone);
 
   return {
     maintenance_id: maintenance.id,
@@ -362,15 +360,21 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
   // Extract monitors separately as it's not part of the record
   const { monitors, ...updateData } = data;
 
+  if (updateData.timezone !== undefined) {
+    updateData.timezone = normalizeTimezone(updateData.timezone);
+  }
+
   // Determine the rrule after update (use new value if provided, otherwise existing)
   const effectiveRrule = data.rrule !== undefined ? data.rrule : existing.rrule;
   const isOneTime = isOneTimeRrule(effectiveRrule);
 
-  // Check if schedule has changed (start_date_time, rrule, or duration_seconds)
+  // Check if schedule has changed (start_date_time, rrule, duration_seconds or timezone).
+  // Timezone counts: it shifts every future occurrence, so events must be regenerated.
   const scheduleChanged =
     (data.start_date_time !== undefined && data.start_date_time !== existing.start_date_time) ||
     (data.rrule !== undefined && data.rrule !== existing.rrule) ||
-    (data.duration_seconds !== undefined && data.duration_seconds !== existing.duration_seconds);
+    (data.duration_seconds !== undefined && data.duration_seconds !== existing.duration_seconds) ||
+    (updateData.timezone !== undefined && updateData.timezone !== existing.timezone);
 
   // Update the maintenance record
   const result = await db.updateMaintenance(id, updateData);
@@ -400,7 +404,14 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
           }
         }
         // Regenerate the event
-        await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1);
+        await GenerateMaintenanceEvents(
+          id,
+          updated.start_date_time,
+          updated.rrule,
+          updated.duration_seconds,
+          1,
+          updated.timezone,
+        );
       } else {
         // For recurring maintenances: delete future SCHEDULED events and regenerate
         for (const event of events) {
@@ -410,7 +421,14 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
           }
         }
         // Regenerate events
-        await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1);
+        await GenerateMaintenanceEvents(
+          id,
+          updated.start_date_time,
+          updated.rrule,
+          updated.duration_seconds,
+          1,
+          updated.timezone,
+        );
       }
     }
   }
@@ -821,12 +839,11 @@ export const GetMaintenanceEventsForRange = async (
       if (!isGlobal && !overlap) continue;
     }
 
-    let occurrences: Date[] = [];
+    let occurrences: number[] = [];
     try {
-      const dtstart = new Date(m.start_date_time * 1000);
-      const fullRrule = `DTSTART:${dtstart.toISOString().replace(/[-:]/g, "").split(".")[0]}Z\nRRULE:${m.rrule}`;
-      const rule = rrulestr(fullRrule);
-      occurrences = rule.between(rangeStart, rangeEnd, true);
+      // Expanded in the maintenance's own timezone so projected occurrences keep a
+      // stable wall-clock time across daylight saving transitions.
+      occurrences = getOccurrencesBetween(m.start_date_time, m.rrule, m.timezone, rangeStart, rangeEnd);
     } catch (err) {
       console.error(`Error projecting RRULE for maintenance ${m.id}:`, err);
       continue;
@@ -841,8 +858,7 @@ export const GetMaintenanceEventsForRange = async (
         monitor_impact: mm.monitor_impact,
       }));
 
-    for (const occ of occurrences) {
-      const startSec = Math.floor(occ.getTime() / 1000);
+    for (const startSec of occurrences) {
       if (materializedKey.has(`${m.id}:${startSec}`)) continue;
 
       const endSec = startSec + m.duration_seconds;

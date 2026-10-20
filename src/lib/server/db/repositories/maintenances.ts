@@ -29,6 +29,7 @@ export class MaintenancesRepository extends BaseRepository {
       start_date_time: data.start_date_time,
       rrule: data.rrule,
       duration_seconds: data.duration_seconds,
+      timezone: data.timezone || "UTC",
       status: data.status || GC.ACTIVE,
       is_global: data.is_global || "YES",
       created_at: this.knex.fn.now(),
@@ -759,6 +760,7 @@ export class MaintenancesRepository extends BaseRepository {
       start_date_time: number;
       rrule: string;
       duration_seconds: number;
+      timezone: string;
       is_global: string;
       monitors: Array<{
         monitor_tag: string;
@@ -780,6 +782,7 @@ export class MaintenancesRepository extends BaseRepository {
         "maintenances.start_date_time as start_date_time",
         "maintenances.rrule as rrule",
         "maintenances.duration_seconds as duration_seconds",
+        "maintenances.timezone as timezone",
         "maintenances.is_global as is_global",
         "maintenance_monitors.monitor_tag as monitor_tag",
         "maintenance_monitors.monitor_impact as monitor_impact",
@@ -797,6 +800,7 @@ export class MaintenancesRepository extends BaseRepository {
         start_date_time: number;
         rrule: string;
         duration_seconds: number;
+        timezone: string;
         is_global: string;
         monitors: Array<{
           monitor_tag: string;
@@ -817,6 +821,7 @@ export class MaintenancesRepository extends BaseRepository {
           start_date_time: r.start_date_time,
           rrule: r.rrule,
           duration_seconds: r.duration_seconds,
+          timezone: r.timezone || "UTC",
           is_global: r.is_global,
           monitors: [],
         });
