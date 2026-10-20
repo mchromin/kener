@@ -166,8 +166,11 @@ COPY --chown=node:node --from=builder /app/build ./build
 COPY --chown=node:node --from=builder /docs-runtime/ ./
 
 # Entrypoint script (runs index-docs on startup when docs are bundled)
+# Strip any CR characters so the script stays executable when the build context
+# comes from a Windows checkout with CRLF line endings
 COPY --chown=node:node docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && \
+    chmod +x docker-entrypoint.sh
 
 # ---- Runtime configuration ----
 

@@ -31,6 +31,12 @@
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
   import { SveltePurify } from "@humanspeak/svelte-purify";
+  import { selectedTimezone } from "$lib/stores/timezone";
+  import {
+    timestampToDatetimeLocalAtTz,
+    datetimeLocalToTimestampAtTz,
+    getTimezoneOffsetLabel
+  } from "$lib/client/datetime";
 
   import CodeMirror from "svelte-codemirror-editor";
   import { markdown } from "@codemirror/lang-markdown";
@@ -91,29 +97,25 @@
 
   const states = [GC.INVESTIGATING, GC.IDENTIFIED, GC.MONITORING, GC.RESOLVED];
 
-  // Convert timestamp to local datetime string for input (YYYY-MM-DDTHH:MM format)
+  // Convert timestamp to a datetime-local string in the user's selected timezone.
+  // `datetime-local` inputs are timezone-naive and would otherwise be rendered and
+  // parsed in the browser's timezone, which drifts from how the value is displayed.
   function timestampToLocalDatetime(ts: number): string {
-    const date = new Date(ts * 1000);
-    // Format as YYYY-MM-DDTHH:MM in local time
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    return timestampToDatetimeLocalAtTz(ts, $selectedTimezone);
   }
 
-  // Convert local datetime string to timestamp (stores as UTC)
+  // Convert the datetime-local string back to a UTC timestamp using the selected timezone
   function localDatetimeToTimestamp(datetime: string): number {
-    if (!datetime) return Math.floor(Date.now() / 1000);
-    const date = new Date(datetime);
-    return Math.floor(date.getTime() / 1000);
+    return datetimeLocalToTimestampAtTz(datetime, $selectedTimezone);
   }
 
-  // Sync datetime inputs with incident state
+  const timezoneLabel = $derived(getTimezoneOffsetLabel($selectedTimezone, incident.start_date_time));
+
+  // Sync datetime inputs with incident state.
+  // Depends on $selectedTimezone so the field re-renders when the timezone changes.
   $effect(() => {
     if (incident.start_date_time) {
-      startDateTimeLocal = timestampToLocalDatetime(incident.start_date_time);
+      startDateTimeLocal = timestampToDatetimeLocalAtTz(incident.start_date_time, $selectedTimezone);
     }
   });
 
@@ -794,7 +796,10 @@
             value={startDateTimeLocal}
             onchange={handleStartDateChange}
           />
-          <p class="text-muted-foreground text-xs">Enter time in your local timezone. It will be stored as UTC.</p>
+          <p class="text-muted-foreground text-xs">
+            Times are entered and shown in <span class="font-medium">{$selectedTimezone}</span>
+            {timezoneLabel ? `(${timezoneLabel})` : ""}. Stored internally as UTC.
+          </p>
         </div>
 
         <!-- Global Visibility -->

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from "./$types";
 import { error } from "@sveltejs/kit";
-import { parse, isValid, getYear, startOfMonth, endOfMonth, addMonths, getUnixTime } from "date-fns";
+import { parse, isValid, getYear, getMonth, addMonths } from "date-fns";
 import { GetPageByPathWithMonitors } from "$lib/server/controllers/controller.js";
 
 const MIN_YEAR = 2023;
@@ -34,11 +34,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
     throw error(404, "Date out of allowed range");
   }
 
-  // Calculate month timestamps
-  const monthStart = startOfMonth(parsedDate);
-  const monthEnd = endOfMonth(parsedDate);
-  const monthStartTs = getUnixTime(monthStart);
-  const monthEndTs = getUnixTime(monthEnd) + 86399; // End of the last day
+  // Calculate month timestamps.
+  // Built explicitly in UTC: deriving them from startOfMonth()/endOfMonth() would anchor
+  // the range to the server process timezone, shifting the window by its UTC offset and
+  // dropping (or adding) events at the month boundary.
+  const monthStartTs = Math.floor(Date.UTC(getYear(parsedDate), getMonth(parsedDate), 1, 0, 0, 0) / 1000);
+  const monthEndTs = Math.floor(Date.UTC(getYear(parsedDate), getMonth(parsedDate) + 1, 1, 0, 0, 0) / 1000) - 1;
 
   return {
     ...{ monthParam, monthStartTs, monthEndTs },

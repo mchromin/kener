@@ -7,9 +7,7 @@
     eachDayOfInterval,
     isSameMonth,
     isSameDay,
-    getUnixTime,
-    startOfDay,
-    format,
+    format
   } from "date-fns";
   import { t } from "$lib/stores/i18n";
 
@@ -20,8 +18,10 @@
 
   interface Props {
     monthDate: Date;
-    counts: Record<number, DayCount>;
-    onDaySelect?: (dayTs: number) => void;
+    /** Keyed by calendar day ("yyyy-MM-dd") rather than a timestamp, so buckets do not
+     *  shift when the viewer's selected timezone differs from the browser's. */
+    counts: Record<string, DayCount>;
+    onDaySelect?: (dayKey: string) => void;
   }
 
   let { monthDate, counts, onDaySelect }: Props = $props();
@@ -49,19 +49,18 @@
   const today = new Date();
 
   function getDayCount(d: Date): DayCount {
-    const ts = getUnixTime(startOfDay(d));
-    return counts[ts] ?? { incidents: 0, maintenances: 0 };
+    return counts[format(d, "yyyy-MM-dd")] ?? { incidents: 0, maintenances: 0 };
   }
 
   function handleClick(d: Date) {
     const c = getDayCount(d);
     if (c.incidents === 0 && c.maintenances === 0) return;
-    onDaySelect?.(getUnixTime(startOfDay(d)));
+    onDaySelect?.(format(d, "yyyy-MM-dd"));
   }
 </script>
 
 <div class="mx-auto w-3/4 rounded-2xl border p-2">
-  <div class="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-muted-foreground">
+  <div class="text-muted-foreground mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium">
     {#each weekdayLabels as label}
       <div class="py-0.5">{label}</div>
     {/each}
@@ -84,7 +83,7 @@
           {isToday ? 'border-primary bg-green-50 dark:bg-green-950/40' : 'border-transparent'}
           {hasEvents ? 'hover:bg-muted cursor-pointer' : 'cursor-default'}"
       >
-        <span class="text-[11px] font-medium leading-none {isToday ? 'text-primary' : ''}">
+        <span class="text-[11px] leading-none font-medium {isToday ? 'text-primary' : ''}">
           {format(day, "d")}
         </span>
         {#if hasEvents}
@@ -92,7 +91,7 @@
             {#if c.maintenances > 0}
               <span
                 title="{c.maintenances} {$t('Total Maintenances')}"
-                class="bg-maintenance flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none text-white"
+                class="bg-maintenance flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-semibold text-white"
               >
                 {c.maintenances}
               </span>
@@ -100,7 +99,7 @@
             {#if c.incidents > 0}
               <span
                 title="{c.incidents} {$t('Total Incidents')}"
-                class="bg-down flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none text-white"
+                class="bg-down flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] leading-none font-semibold text-white"
               >
                 {c.incidents}
               </span>
@@ -110,7 +109,7 @@
       </button>
     {/each}
   </div>
-  <div class="mt-2 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+  <div class="text-muted-foreground mt-2 flex flex-wrap gap-3 text-[10px]">
     <span class="flex items-center gap-1">
       <span class="bg-maintenance inline-block size-2 rounded-full"></span>
       {$t("Total Maintenances")}

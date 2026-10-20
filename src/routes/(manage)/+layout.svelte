@@ -34,8 +34,17 @@
   import { Toaster } from "$lib/components/ui/sonner/index.js";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { ROUTE_PERMISSION_MAP } from "$lib/allPerms.js";
+  import { onMount } from "svelte";
+  import { timezone } from "$lib/stores/timezone";
 
   let { children, data } = $props();
+
+  // The public status page initialises this via layoutClientData; the admin area has to
+  // do it explicitly, otherwise it would silently fall back to the browser timezone and
+  // disagree with the timezone the user picked on the status page.
+  onMount(() => {
+    timezone.init();
+  });
 
   // Navigation items - single source of truth
   const allNavItems = [
@@ -75,7 +84,7 @@
   let pageTitle = $derived(navItems.find((item) => page.url.pathname.startsWith(item.url))?.title || "Dashboard");
 </script>
 
-<ModeWatcher defaultMode={data.defaultSiteTheme as 'light' | 'dark' | 'system'} />
+<ModeWatcher defaultMode={data.defaultSiteTheme as "light" | "dark" | "system"} />
 <Toaster />
 
 <svelte:head>
