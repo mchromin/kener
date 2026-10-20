@@ -12,9 +12,11 @@
   import ICONS from "$lib/icons";
   import { t } from "$lib/stores/i18n";
   import { formatDate } from "$lib/stores/datetime";
+  import { selectedTimezone } from "$lib/stores/timezone";
+  import { getDayKeyAtTz, dayKeyToTimestampAtTz } from "$lib/client/datetime";
   import { resolve } from "$app/paths";
   import clientResolver, { absoluteResolve } from "$lib/client/resolver.js";
-  import { format, parse, addMonths, subMonths, getUnixTime, startOfDay, formatDistanceStrict } from "date-fns";
+  import { format, parse, addMonths, subMonths } from "date-fns";
   import { page } from "$app/state";
   import type { IncidentForMonitorListWithComments, MaintenanceEventsMonitorList } from "$lib/server/types/db";
 
@@ -70,7 +72,8 @@
 
   // Group events by day
   interface DayEvents {
-    date: number; // Unix timestamp of start of day
+    key: string; // Calendar day ("yyyy-MM-dd") in the selected timezone
+    date: number; // Unix timestamp of that day's midnight in the selected timezone
     events: DisplayEvent[];
   }
 
@@ -104,30 +107,32 @@
       });
     }
 
-    // Group by day
-    const dayMap = new Map<number, DisplayEvent[]>();
+    // Group by calendar day resolved in the selected timezone, so the bucket always
+    // matches the date rendered by $formatDate for the same timestamp.
+    const dayMap = new Map<string, DisplayEvent[]>();
     for (const event of allEvents) {
-      const dayStart = getUnixTime(startOfDay(new Date(event.start_date_time * 1000)));
-      if (!dayMap.has(dayStart)) {
-        dayMap.set(dayStart, []);
+      const dayKey = getDayKeyAtTz(event.start_date_time, $selectedTimezone);
+      if (!dayMap.has(dayKey)) {
+        dayMap.set(dayKey, []);
       }
-      dayMap.get(dayStart)!.push(event);
+      dayMap.get(dayKey)!.push(event);
     }
 
     // Sort days descending (newest first)
-    const sortedDays = Array.from(dayMap.keys()).sort((a, b) => b - a);
+    const sortedDays = Array.from(dayMap.keys()).sort((a, b) => b.localeCompare(a));
 
-    const result: DayEvents[] = sortedDays.map((dayTs) => ({
-      date: dayTs,
-      events: dayMap.get(dayTs)!.sort((a, b) => b.start_date_time - a.start_date_time)
+    const result: DayEvents[] = sortedDays.map((dayKey) => ({
+      key: dayKey,
+      date: dayKeyToTimestampAtTz(dayKey, $selectedTimezone),
+      events: dayMap.get(dayKey)!.sort((a, b) => b.start_date_time - a.start_date_time)
     }));
 
     return result;
   });
 
-  // Per-day counts for the month calendar (key = unix-seconds start of local day)
+  // Per-day counts for the month calendar (key = "yyyy-MM-dd" in the selected timezone)
   const dayCounts = $derived.by(() => {
-    const map: Record<number, { incidents: number; maintenances: number }> = {};
+    const map: Record<string, { incidents: number; maintenances: number }> = {};
     for (const day of eventsByDay) {
       let inc = 0;
       let maint = 0;
@@ -135,13 +140,13 @@
         if (e.type === "incident") inc++;
         else maint++;
       }
-      map[day.date] = { incidents: inc, maintenances: maint };
+      map[day.key] = { incidents: inc, maintenances: maint };
     }
     return map;
   });
 
-  function scrollToDay(dayTs: number) {
-    const el = document.getElementById(`day-${dayTs}`);
+  function scrollToDay(dayKey: string) {
+    const el = document.getElementById(`day-${dayKey}`);
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -193,7 +198,6 @@
 
 <div class="flex flex-col gap-3">
   <!-- Header with back button -->
-
 
   <div class="flex flex-col gap-4 sm:flex-row">
     <div class="flex flex-row justify-start gap-y-3 rounded-3xl border px-3 py-2">
@@ -275,7 +279,7 @@
     <MonthCalendar monthDate={parsedDate} counts={dayCounts} onDaySelect={scrollToDay} />
     <!-- Events grouped by day -->
     {#each eventsByDay as day}
-      <div id="day-{day.date}" class="flex scroll-mt-8 flex-col gap-2">
+      <div id="day-{day.key}" class="flex scroll-mt-8 flex-col gap-2">
         <div class="bg-secondary mt-4 w-fit rounded-3xl border px-4 py-2 text-xs font-medium">
           {$formatDate(day.date, page.data.dateAndTimeFormat.dateOnly)}
         </div>
