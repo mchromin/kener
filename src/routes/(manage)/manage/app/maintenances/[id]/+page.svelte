@@ -28,11 +28,18 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { toast } from "svelte-sonner";
-  import { format, formatDistanceToNow, isPast, isFuture, isWithinInterval } from "date-fns";
+  import { formatDistanceToNow, isPast, isFuture, isWithinInterval } from "date-fns";
   import LocalTime from "$lib/components/LocalTime.svelte";
   import { rrulestr } from "rrule";
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
+  import { selectedTimezone } from "$lib/stores/timezone";
+  import { formatDate } from "$lib/stores/datetime";
+  import {
+    timestampToDatetimeLocalAtTz,
+    datetimeLocalToTimestampAtTz,
+    getTimezoneOffsetLabel
+  } from "$lib/client/datetime";
 
   let { params }: PageProps = $props();
   const isNew = $derived(params.id === "new");
@@ -76,8 +83,22 @@
     is_global: "YES"
   });
 
-  // For datetime input
-  let startDateTimeLocal = $state("");
+  // For datetime input.
+  // Source of truth is the absolute timestamp; the datetime-local string is derived
+  // from it in the user's selected timezone so switching timezones re-renders the
+  // field instead of silently reinterpreting it in the browser's timezone.
+  let startTs = $state<number | null>(null);
+  const startDateTimeLocal = $derived(startTs === null ? "" : timestampToDatetimeLocalAtTz(startTs, $selectedTimezone));
+  const timezoneLabel = $derived(getTimezoneOffsetLabel($selectedTimezone, startTs ?? undefined));
+
+  function handleStartDateTimeInput(e: Event) {
+    const target = e.currentTarget as HTMLInputElement;
+    if (!target.value) {
+      startTs = null;
+      return;
+    }
+    startTs = datetimeLocalToTimestampAtTz(target.value, $selectedTimezone);
+  }
 
   // Duration inputs (for easier UI)
   let durationHours = $state(1);
@@ -155,24 +176,6 @@
     };
   });
 
-  // Convert timestamp to local datetime string for input
-  function timestampToLocalDatetime(ts: number): string {
-    const date = new Date(ts * 1000);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  }
-
-  // Convert local datetime string to timestamp
-  function localDatetimeToTimestamp(datetime: string): number {
-    if (!datetime) return Math.floor(Date.now() / 1000);
-    const date = new Date(datetime);
-    return Math.floor(date.getTime() / 1000);
-  }
-
   // Get the RRULE to use
   function getRrule(): string {
     if (scheduleType === "ONE_TIME") {
@@ -193,12 +196,12 @@
 
   // Generate preview dates based on RRULE and start time
   function getPreviewDates(): string[] {
-    if (scheduleType === "ONE_TIME" || !startDateTimeLocal || !customRrule.trim()) {
+    if (scheduleType === "ONE_TIME" || startTs === null || !customRrule.trim()) {
       return [];
     }
 
     try {
-      const dtstart = new Date(startDateTimeLocal);
+      const dtstart = new Date(startTs * 1000);
       const fullRrule = `DTSTART:${dtstart.toISOString().replace(/[-:]/g, "").split(".")[0]}Z\nRRULE:${customRrule}`;
       const rule = rrulestr(fullRrule);
       const occurrences: Date[] = [];
@@ -211,7 +214,8 @@
         searchFrom = next;
       }
 
-      return occurrences.map((d) => format(d, "EEE, MMM d, yyyy 'at' h:mm a"));
+      // Render the preview in the selected timezone so it matches the status page.
+      return occurrences.map((d) => $formatDate(d, "EEE, MMM d, yyyy 'at' h:mm a"));
     } catch (e) {
       return [];
     }
@@ -251,7 +255,7 @@
   // Validation
   const isValid = $derived.by(() => {
     if (!maintenance.title.trim()) return false;
-    if (!startDateTimeLocal) return false;
+    if (startTs === null) return false;
     if (calculatedDurationSeconds <= 0) return false;
     if (scheduleType === "RECURRING" && (!customRrule.trim() || rruleError)) return false;
     return true;
@@ -261,7 +265,7 @@
   async function fetchMaintenance() {
     if (isNew) {
       // Set default start time (1 hour from now)
-      startDateTimeLocal = timestampToLocalDatetime(Math.floor(Date.now() / 1000) + 3600);
+      startTs = Math.floor(Date.now() / 1000) + 3600;
       loading = false;
       return;
     }
@@ -293,7 +297,7 @@
         parseRrule(result.rrule);
 
         // Set UI values
-        startDateTimeLocal = timestampToLocalDatetime(result.start_date_time);
+        startTs = result.start_date_time;
         updateDurationInputs(result.duration_seconds);
 
         // Set monitors with their statuses
@@ -354,13 +358,13 @@
 
   // Save maintenance
   async function saveMaintenance() {
-    if (!isValid) return;
+    if (!isValid || startTs === null) return;
     saving = true;
     error = null;
 
     try {
       const rrule = getRrule();
-      const startTime = localDatetimeToTimestamp(startDateTimeLocal);
+      const startTime = startTs;
 
       if (isNew) {
         const createData = {
@@ -699,10 +703,18 @@
             {scheduleType === "ONE_TIME" ? "Start Date/Time" : "First Occurrence Date/Time"}
             <span class="text-destructive">*</span>
           </Label>
-          <Input id="start-time" type="datetime-local" bind:value={startDateTimeLocal} />
+          <Input id="start-time" type="datetime-local" value={startDateTimeLocal} oninput={handleStartDateTimeInput} />
+          <p class="text-muted-foreground text-xs">
+            Times are entered and shown in <span class="font-medium">{$selectedTimezone}</span>
+            {timezoneLabel ? `(${timezoneLabel})` : ""}. Stored internally as UTC.
+          </p>
           {#if scheduleType === "RECURRING"}
             <p class="text-muted-foreground text-xs">
               Recurring maintenances will occur at this same time of day. The date pattern is configured below.
+            </p>
+            <p class="text-muted-foreground text-xs">
+              Note: occurrences are anchored to UTC, so the local time shifts by an hour across daylight saving
+              transitions.
             </p>
           {/if}
         </div>
