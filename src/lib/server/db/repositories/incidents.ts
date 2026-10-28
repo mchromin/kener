@@ -136,6 +136,7 @@ export class IncidentsRepository extends BaseRepository {
       incident_type: data.incident_type,
       incident_source: data.incident_source,
       is_global: data.is_global || "YES",
+      timezone: data.timezone ?? null,
     };
 
     if (dbType === "postgresql") {
@@ -226,8 +227,8 @@ export class IncidentsRepository extends BaseRepository {
       .first<CountResult>();
   }
 
-  async updateIncident(data: IncidentRecord): Promise<number> {
-    return await this.knex("incidents").where({ id: data.id }).update({
+  async updateIncident(data: Omit<IncidentRecord, "timezone"> & { timezone?: string | null }): Promise<number> {
+    const updateData: Record<string, unknown> = {
       title: data.title,
       start_date_time: data.start_date_time,
       end_date_time: data.end_date_time,
@@ -235,7 +236,16 @@ export class IncidentsRepository extends BaseRepository {
       state: data.state,
       is_global: data.is_global,
       updated_at: this.knex.fn.now(),
-    });
+    };
+
+    // Only touch the column when the caller actually supplied a value, so callers that
+    // don't know about the timezone (e.g. the comments endpoint updating incident state)
+    // can't blank out a recorded one.
+    if (data.timezone !== undefined) {
+      updateData.timezone = data.timezone;
+    }
+
+    return await this.knex("incidents").where({ id: data.id }).update(updateData);
   }
 
   async deleteIncident(id: number): Promise<number> {
@@ -262,6 +272,7 @@ export class IncidentsRepository extends BaseRepository {
         "state",
         "incident_type",
         "is_global",
+        "timezone",
       )
       .where("id", id)
       .first();

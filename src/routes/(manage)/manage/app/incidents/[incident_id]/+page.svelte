@@ -9,6 +9,7 @@
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
   import * as Command from "$lib/components/ui/command/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
   import * as Breadcrumb from "$lib/components/ui/breadcrumb/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
@@ -20,6 +21,7 @@
   import XIcon from "@lucide/svelte/icons/x";
   import MoreVerticalIcon from "@lucide/svelte/icons/more-vertical";
   import CheckIcon from "@lucide/svelte/icons/check";
+  import GlobeIcon from "@lucide/svelte/icons/globe";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import type { PageProps } from "./$types";
   import type { MonitorRecord, IncidentRecord, IncidentCommentRecord } from "$lib/server/types/db.js";
@@ -31,7 +33,8 @@
   import { resolve } from "$app/paths";
   import clientResolver from "$lib/client/resolver.js";
   import { SveltePurify } from "@humanspeak/svelte-purify";
-  import { selectedTimezone } from "$lib/stores/timezone";
+  import { selectedTimezone, timezone as timezoneStore } from "$lib/stores/timezone";
+  import { normalizeTimezone } from "$lib/timezone";
   import {
     timestampToDatetimeLocalAtTz,
     datetimeLocalToTimestampAtTz,
@@ -68,8 +71,51 @@
     is_global: "YES"
   });
 
-  // For datetime inputs (convert to/from local datetime string)
-  let startDateTimeLocal = $state("");
+  // Timezone the incident's times were entered in.
+  // Empty means "not recorded" (existing incidents created before this was stored), in
+  // which case we fall back to the viewer's selected timezone — the previous behaviour.
+  let incidentTimezone = $state<string>("");
+  let timezonePickerOpen = $state(false);
+
+  const effectiveTimezone = $derived(normalizeTimezone(incidentTimezone || $selectedTimezone, $selectedTimezone));
+
+  // `datetime-local` inputs are timezone-naive: the browser renders and parses them in the
+  // host machine's timezone, which drifts from how the value is displayed elsewhere.
+  // Source of truth is the absolute timestamp; the input string is derived from it in the
+  // incident's own timezone, so the field re-renders when that timezone changes.
+  const startDateTimeLocal = $derived(
+    incident.start_date_time ? timestampToDatetimeLocalAtTz(incident.start_date_time, effectiveTimezone) : ""
+  );
+
+  const timezoneLabel = $derived(getTimezoneOffsetLabel(effectiveTimezone, incident.start_date_time));
+
+  function timestampToLocalDatetime(ts: number): string {
+    return timestampToDatetimeLocalAtTz(ts, effectiveTimezone);
+  }
+
+  function localDatetimeToTimestamp(datetime: string): number {
+    return datetimeLocalToTimestampAtTz(datetime, effectiveTimezone);
+  }
+
+  // Update incident timestamps when inputs change
+  function handleStartDateChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!target.value) return;
+    incident.start_date_time = localDatetimeToTimestamp(target.value);
+  }
+
+  function handleTimezoneSelect(tz: string) {
+    // Keep the wall-clock time the user typed and reinterpret it in the new timezone,
+    // which is what "this incident started at 14:00 local time" means in practice.
+    // An in-progress update form follows automatically: its string is parsed against
+    // `effectiveTimezone` on save.
+    const wallClock = startDateTimeLocal;
+    incidentTimezone = tz;
+    if (wallClock) {
+      incident.start_date_time = datetimeLocalToTimestampAtTz(wallClock, tz);
+    }
+    timezonePickerOpen = false;
+  }
 
   // First comment for new incidents
   let firstComment = $state("");
@@ -97,41 +143,14 @@
 
   const states = [GC.INVESTIGATING, GC.IDENTIFIED, GC.MONITORING, GC.RESOLVED];
 
-  // Convert timestamp to a datetime-local string in the user's selected timezone.
-  // `datetime-local` inputs are timezone-naive and would otherwise be rendered and
-  // parsed in the browser's timezone, which drifts from how the value is displayed.
-  function timestampToLocalDatetime(ts: number): string {
-    return timestampToDatetimeLocalAtTz(ts, $selectedTimezone);
-  }
-
-  // Convert the datetime-local string back to a UTC timestamp using the selected timezone
-  function localDatetimeToTimestamp(datetime: string): number {
-    return datetimeLocalToTimestampAtTz(datetime, $selectedTimezone);
-  }
-
-  const timezoneLabel = $derived(getTimezoneOffsetLabel($selectedTimezone, incident.start_date_time));
-
-  // Sync datetime inputs with incident state.
-  // Depends on $selectedTimezone so the field re-renders when the timezone changes.
-  $effect(() => {
-    if (incident.start_date_time) {
-      startDateTimeLocal = timestampToDatetimeLocalAtTz(incident.start_date_time, $selectedTimezone);
-    }
-  });
-
-  // Update incident timestamps when inputs change
-  function handleStartDateChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    startDateTimeLocal = target.value;
-    incident.start_date_time = localDatetimeToTimestamp(target.value);
-  }
-
   // Validation
   const isValid = $derived(incident.title.trim() !== "" && incident.start_date_time > 0);
 
   // Fetch incident data
   async function fetchIncident() {
     if (isNew) {
+      // New incidents are authored in the timezone the admin is currently viewing in.
+      incidentTimezone = $selectedTimezone;
       loading = false;
       return;
     }
@@ -156,6 +175,9 @@
           state: result.state,
           is_global: result.is_global || "YES"
         };
+        // NULL for incidents created before the timezone was recorded; the derived
+        // fallback then keeps showing them in the viewer's timezone as before.
+        incidentTimezone = result.timezone || "";
         // Fetch comments and monitors
         await Promise.all([fetchComments(), fetchIncidentMonitors()]);
       } else {
@@ -257,7 +279,8 @@
               status: "OPEN",
               state: GC.INVESTIGATING,
               incident_type: GC.INCIDENT,
-              is_global: incident.is_global
+              is_global: incident.is_global,
+              timezone: effectiveTimezone
             }
           })
         });
@@ -315,7 +338,8 @@
               start_date_time: incident.start_date_time,
               end_date_time: null,
               status: "OPEN",
-              is_global: incident.is_global
+              is_global: incident.is_global,
+              timezone: effectiveTimezone
             }
           })
         });
@@ -790,14 +814,49 @@
         <!-- Start Date/Time -->
         <div class="flex flex-col gap-2">
           <Label for="incident-start">Start Date/Time <span class="text-destructive">*</span></Label>
-          <Input
-            id="incident-start"
-            type="datetime-local"
-            value={startDateTimeLocal}
-            onchange={handleStartDateChange}
-          />
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              id="incident-start"
+              type="datetime-local"
+              class="sm:max-w-xs"
+              value={startDateTimeLocal}
+              onchange={handleStartDateChange}
+            />
+            <Popover.Root bind:open={timezonePickerOpen}>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={timezonePickerOpen}
+                    class="justify-between font-normal sm:w-64"
+                  >
+                    <span class="truncate">{effectiveTimezone}</span>
+                    <GlobeIcon class="size-4 shrink-0 opacity-60" />
+                  </Button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Content class="w-[280px] p-0">
+                <Command.Root>
+                  <Command.Input placeholder="Search timezone..." />
+                  <Command.List class="max-h-60">
+                    <Command.Empty>No timezone found.</Command.Empty>
+                    <Command.Group>
+                      {#each $timezoneStore.availableTimezones as tz (tz)}
+                        <Command.Item value={tz} onSelect={() => handleTimezoneSelect(tz)} class="text-xs">
+                          <CheckIcon class="me-2 size-4 {effectiveTimezone !== tz ? 'text-transparent' : ''}" />
+                          {tz}
+                        </Command.Item>
+                      {/each}
+                    </Command.Group>
+                  </Command.List>
+                </Command.Root>
+              </Popover.Content>
+            </Popover.Root>
+          </div>
           <p class="text-muted-foreground text-xs">
-            Times are entered and shown in <span class="font-medium">{$selectedTimezone}</span>
+            Times are entered and shown in <span class="font-medium">{effectiveTimezone}</span>
             {timezoneLabel ? `(${timezoneLabel})` : ""}. Stored internally as UTC.
           </p>
         </div>
@@ -1051,6 +1110,7 @@
                 <div class="flex flex-col gap-2">
                   <Label>Date/Time</Label>
                   <Input type="datetime-local" bind:value={commentDateTime} />
+                  <p class="text-muted-foreground text-xs">In {effectiveTimezone}</p>
                 </div>
               </div>
               <div class="flex justify-end gap-2">
@@ -1117,6 +1177,7 @@
                         <div class="flex flex-col gap-2">
                           <Label>Date/Time</Label>
                           <Input type="datetime-local" bind:value={commentDateTime} />
+                          <p class="text-muted-foreground text-xs">In {effectiveTimezone}</p>
                         </div>
                       </div>
                       <div class="flex justify-end gap-2">
