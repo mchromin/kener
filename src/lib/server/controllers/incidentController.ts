@@ -17,6 +17,7 @@ import type {
   DbTimestamp,
 } from "../types/db.js";
 import { parseDbTimestamp } from "../tool.js";
+import { isValidTimezone } from "../../timezone.js";
 import GC from "../../global-constants.js";
 import { getUnixTime, differenceInSeconds } from "date-fns";
 import subscriberQueue from "../queues/subscriberQueue.js";
@@ -42,6 +43,8 @@ export interface IncidentInput {
   incident_type?: string;
   incident_source?: string;
   is_global?: string;
+  /** IANA timezone the times were entered in. Omitted/invalid values are stored as NULL. */
+  timezone?: string | null;
 }
 
 interface IncidentUpdateInput {
@@ -51,6 +54,7 @@ interface IncidentUpdateInput {
   status?: string;
   state?: string;
   is_global?: string;
+  timezone?: string | null;
 }
 
 export const GetIncidentsOpenHome = async (
@@ -315,6 +319,8 @@ export const CreateIncident = async (data: IncidentInput): Promise<{ incident_id
     incident_type: !!data.incident_type ? data.incident_type : "INCIDENT",
     incident_source: !!data.incident_source ? data.incident_source : "DASHBOARD",
     is_global: data.is_global || "YES",
+    // NULL means "not recorded" — readers fall back to the viewer's timezone.
+    timezone: isValidTimezone(data.timezone) ? (data.timezone as string) : null,
   };
 
   //incident_type == INCIDENT delete endDateTime
@@ -399,6 +405,9 @@ export const UpdateIncident = async (incident_id: number, data: IncidentUpdateIn
     state: data.state || incidentExists.state,
     end_date_time: data.end_date_time || incidentExists.end_date_time,
     is_global: data.is_global !== undefined ? data.is_global : incidentExists.is_global,
+    // Only overwrite with a timezone we recognise; otherwise keep whatever was stored,
+    // so callers that don't know about the field can't blank it out.
+    timezone: isValidTimezone(data.timezone) ? (data.timezone as string) : (incidentExists.timezone ?? null),
   };
 
   return await db.updateIncident(updateObject as IncidentRecord);

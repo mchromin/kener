@@ -351,6 +351,11 @@ export interface IncidentRecord {
   incident_type: string;
   incident_source: string;
   is_global: string;
+  /**
+   * IANA timezone the incident's times were entered in.
+   * NULL means "not recorded" — consumers fall back to the viewer's selected timezone.
+   */
+  timezone: string | null;
 }
 
 export interface IncidentMonitorImpact {
@@ -385,6 +390,7 @@ export interface IncidentRecordInsert {
   incident_type?: string;
   incident_source?: string;
   is_global?: string;
+  timezone?: string | null;
 }
 
 // ============ incident_monitors table ============

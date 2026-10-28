@@ -1,5 +1,6 @@
 import { rrulestr } from "rrule";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { DEFAULT_TIMEZONE, normalizeTimezone } from "./timezone.js";
 
 /**
  * Timezone-aware expansion of maintenance recurrence rules.
@@ -21,22 +22,14 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
  * time across DST transitions without an extra dependency.
  */
 
-export const DEFAULT_MAINTENANCE_TIMEZONE = "UTC";
+export const DEFAULT_MAINTENANCE_TIMEZONE = DEFAULT_TIMEZONE;
 
 /**
- * Validate an IANA timezone, falling back to UTC.
+ * Re-exported from the shared timezone module so existing imports keep working.
  * Existing rows (and any bad input) therefore keep the previous UTC-anchored behaviour
  * rather than throwing at expansion time.
  */
-export function normalizeTimezone(timezone?: string | null): string {
-  if (!timezone) return DEFAULT_MAINTENANCE_TIMEZONE;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-    return timezone;
-  } catch {
-    return DEFAULT_MAINTENANCE_TIMEZONE;
-  }
-}
+export { normalizeTimezone };
 
 /** Real instant -> floating Date whose UTC fields hold the wall-clock time in `timezone`. */
 function toFloating(instant: Date, timezone: string): Date {
