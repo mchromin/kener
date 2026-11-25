@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kener TV</title>
+<style>
+* { box-sizing: border-box }
+:root { color-scheme: dark; --bg:#101316; --surface:#191d21; --line:#343b42; --muted:#b2bac2; --accent:#88939d }
+body { margin:0; height:100vh; height:100dvh; display:grid; grid-template-rows:auto 1fr; padding:clamp(10px,1.4vw,30px); gap:clamp(8px,1.2vw,24px); background:var(--bg); color:#f6f8fa; font:1rem system-ui,sans-serif }
+article, dialog, #summary { border:1px solid var(--line); background:var(--surface); border-radius:18px }
+header { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:.7rem }
+header h1 { margin:0; font-size:clamp(1.3rem,2.1vw,2.6rem); line-height:1.1; letter-spacing:-.035em; text-align:center }
+#summary { justify-self:start; display:flex; align-items:center; gap:.6em; padding:.45em .85em; border-radius:12px; font-size:clamp(.85rem,1vw,1.25rem); line-height:1.2 }
+.tools { display:flex; align-items:center; justify-content:flex-end; gap:.5rem }
+#summary::before,.badge::before { content:""; display:inline-block; flex:none; width:.56em; height:.56em; border-radius:50%; background:var(--accent) }
+main { display:grid; gap:clamp(4px,.65vw,12px); grid-auto-rows:minmax(0,1fr); min-height:0; min-width:0 }
+article { display:flex; flex-direction:column; justify-content:center; gap:min(.65vh,6px); padding:clamp(4px,.85vh,12px) clamp(6px,1vw,20px); min-width:0; min-height:0; overflow-wrap:anywhere; container-type:size }
+article :is(strong,h2) { margin:0; font-size:clamp(1.32rem,7cqw,3.2rem); line-height:1.12; letter-spacing:-.025em }
+.monitor-name { display:flex; align-items:center; gap:.35em }
+.monitor-name img { margin-inline-start:auto; width:1.3em; height:1.3em; border-radius:50%; object-fit:cover; flex:none }
+.badge { align-self:start; display:inline-flex; align-items:center; gap:.5em; color:var(--accent); border-radius:99px; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:.3em .8em; font-size:clamp(1.12rem,4.45cqw,1.6rem); font-weight:600 }
+[data-status="UP"] { --accent:#62d9a5 }
+[data-status="DEGRADED"] { --accent:#ffca76 }
+[data-status="DOWN"] { --accent:#ff858e }
+[data-status="MAINTENANCE"] { --accent:#99b9ff }
+:is(article,#summary)[data-status="DEGRADED"] { background:#703509; border-color:#f3a448; --muted:#ffe2bf }
+:is(article,#summary)[data-status="DOWN"] { background:#741f2c; border-color:#ff7889; --muted:#ffe0e5 }
+article:is([data-status="DOWN"],[data-status="DEGRADED"]) .badge { color:white; background:#0004 }
+:focus-visible { outline:3px solid #a4dcff; outline-offset:2px }
+.sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap }
+@keyframes outage-pulse {
+  0%,100% { background-color:#601821; box-shadow:inset 0 0 0 1px #ad414e }
+  50% { background-color:#a22032; border-color:#ffacb3; box-shadow:inset 0 0 0 4px #ff7889,0 0 12px #ff435866 }
+}
+@media (prefers-reduced-motion:no-preference) {
+  :is(article,#summary)[data-status="DOWN"] { animation:outage-pulse 1s ease-in-out infinite }
+}
+.metrics { display:flex; justify-content:space-between; gap:.5em }
+.metrics { color:var(--muted); font-variant-numeric:tabular-nums; font-size:clamp(1rem,3.9cqw,1.4rem) }
+.trend { margin:.2em 0 0; color:var(--muted); font-size:clamp(.95rem,3.6cqw,1.22rem) }
+.trend svg { display:block; width:100%; height:clamp(24px,18cqh,72px); color:#89bde7; background:linear-gradient(transparent 96%,var(--line) 96%) }
+.trend figcaption { margin-top:.3em }
+#holiday { align-items:center; text-align:center; background:#162b27; border-color:#34554b }
+#holiday .santa { display:block; width:min(76cqw,70cqh); height:60cqh; flex-shrink:1; min-height:0 }
+#countdown { color:#c6e6d5; font-size:min(5cqw,13cqh); font-variant-numeric:tabular-nums }
+@container (max-height:155px) {
+  article > :is(strong,h2) { font-size:min(5.6cqw,15cqh,1.58rem) }
+  .badge { font-size:min(4.2cqw,11.5cqh,1.1rem) }
+  .metrics,.trend { font-size:min(3.6cqw,10.5cqh,.95rem) }
+  .trend svg { height:17cqh }
+}
+#picked { display:flex; flex-wrap:wrap; gap:.35rem; max-height:15vh; overflow:auto; padding:.6rem 1.35rem; border-bottom:1px solid var(--line) }
+#picked button { font-size:.8rem; border-radius:2rem; color:#c6f5de; background:#21382e; border-color:#395949 }
+aside { margin-left:auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:.1rem .8rem; color:var(--muted); font-size:.85em; text-align:right; font-variant-numeric:tabular-nums }
+#message:empty { display:none }
+#clock { font-size:1.05rem; font-weight:600; color:#f6f8fa }
+#edit { display:grid; place-items:center; width:2rem; height:2rem; flex:none; padding:0; border-radius:50%; opacity:0 }
+#edit { pointer-events:none }
+#edit:focus-visible, body.controls #edit { opacity:1; pointer-events:auto }
+@media (hover:none) { #edit { opacity:1; pointer-events:auto; width:44px; height:44px } }
+button, select { background:#262c32; color:inherit; border:1px solid #48525c; border-radius:.65em; padding:.35em .65em; font:inherit; cursor:pointer }
+button:hover,button:focus-visible { border-color:#8b9baa }
+button:disabled { opacity:.4 }
+dialog { color:inherit; padding:0; width:min(960px,96vw); max-width:96vw; max-height:94dvh; overflow:auto; box-shadow:0 24px 90px #0009 }
+dialog[open] { display:flex; flex-direction:column }
+dialog::backdrop { background:#07090bbd; backdrop-filter:blur(5px) }
+.panel-title, .panel-footer { display:flex; align-items:center; justify-content:space-between; gap:.7rem; padding:1rem 1.35rem }
+.panel-title { border-bottom:1px solid var(--line) }
+.eyebrow { display:block; color:#99d7be; font-size:.72rem; font-weight:650; letter-spacing:.12em; text-transform:uppercase }
+h2,h3 { margin:.25em 0; letter-spacing:-.025em }
+#count { font-size:.85rem; white-space:nowrap; color:#b8efd6; background:#203a32; border-radius:2rem; padding:.4em .8em }
+.picker { display:grid; grid-template-columns:minmax(10rem,29%) 1fr; min-height:0; height:min(55dvh,560px) }
+.sources,.monitors { overflow:auto; padding:1rem; scrollbar-width:thin }
+.sources { background:#14181b; border-right:1px solid var(--line) }
+#pages { display:grid; gap:.2rem; margin-top:.65rem }
+#pages button { text-align:left; border:1px solid transparent; background:none; padding:.55em .7em; font-size:.9rem }
+#pages button:hover { background:#252c30 }
+#pages button[aria-pressed=true] { color:#baf4d8; background:#22372f; border-color:#395949 }
+#choices { display:grid; gap:.4rem; margin-top:.75rem }
+.selection-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem }
+.selection-heading label { white-space:nowrap; color:var(--muted); cursor:pointer }
+.selection-heading input { accent-color:#77dbac }
+#choices > div { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; background:#202529; border:1px solid var(--line); border-radius:.75rem; padding:.5rem }
+#choices > div:has(:checked) { background:#1c2b26; border-color:#39584b }
+#choices label { display:flex; align-items:center; gap:.7rem; flex:1; padding:.4rem; cursor:pointer; overflow-wrap:anywhere; min-width:0 }
+#panel input[type=checkbox] { accent-color:#77dbac; width:1.35rem; height:1.35rem; flex:none; vertical-align:middle }
+#panel label:has(input[type=checkbox]) { min-height:44px; display:flex; align-items:center; gap:.55rem }
+#choices label:first-child { flex:1 1 10rem; font-weight:600 }
+#choices .pin-option { flex:none }
+#choices .pin-option:has(:disabled) { color:var(--muted) }
+#choices .move-actions { display:flex; flex-wrap:wrap; gap:.35rem }
+#choices .move-actions { margin-inline-start:auto }
+#choices button[aria-disabled=true] { opacity:.4; cursor:default }
+#choices button { min-height:44px; min-width:44px; padding:.35rem .6rem; border-color:#697781 }
+#choices button:hover:not(:disabled) { background:#344039 }
+.panel-footer { border-top:1px solid var(--line); flex-wrap:wrap }
+.panel-footer label { margin-right:auto }
+.extra-tile { display:block; padding:.7rem 1.35rem; border-top:1px solid var(--line); cursor:pointer }
+.extra-tile input { accent-color:#77dbac }
+#notice { margin:0; color:var(--muted); font-size:.85rem }
+#notice:not(:empty) { padding:.5rem 1.35rem }
+#save { background:#b3eccf; color:#133529; font-weight:650 }
+@media (max-width:600px) {
+  body { height:auto; min-height:100dvh; grid-template-rows:auto auto }
+  main { grid-template-columns:minmax(0,1fr) !important; grid-auto-rows:auto }
+  article { container-type:inline-size; padding:1rem; gap:.4rem }
+  .trend svg { height:2.5rem }
+  #holiday .santa { height:5rem }
+  header { grid-template-columns:minmax(0,1fr) minmax(0,1fr) }
+  header h1 { grid-column:1/-1; grid-row:1 }
+  .picker { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); height:58dvh }
+  .sources { border:0; border-bottom:1px solid var(--line); padding:.6rem }
+  #pages { display:flex; overflow-x:auto }
+  #pages button { flex:none }
+}
+</style>
+<header><div id="summary" role="status" aria-label="Service status"><strong id="headline">Connecting to Kener</strong></div>
+<h1>OLE services status</h1><div class="tools">
+<small id="pageNumber" hidden></small>
+<aside><time id="clock" aria-label="Local time"></time><div id="age"></div><div id="message" role="status">Loading data…</div></aside>
+<button id="edit" aria-label="Edit view" aria-haspopup="dialog" aria-controls="panel" title="Edit view"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+  <path d="m10 2-.5 2.5-1.8 1L5.3 5 3 8.8l1.9 1.7v2.9L3 15.2 5.3 19l2.4-.6 1.8 1L10 22h4l.5-2.6 1.8-1 2.4.6 2.3-3.8-1.9-1.8v-2.9L21 8.8 18.7 5l-2.4.5-1.8-1L14 2Z"/>
+  <circle cx="12" cy="12" r="3.3"/></svg></button></div></header>
+<main id="grid" aria-label="Monitor status"></main>
+<template id="holidayTile">
+  <article id="holiday"><svg class="santa" viewBox="0 0 180 160" aria-hidden="true">
+    <circle cx="90" cy="82" r="70" fill="#22463d"/>
+    <g fill="#ffe3a0"><path d="m26 46 2 6 6 2-6 2-2 6-2-6-6-2 6-2zM151 91l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/><circle cx="144" cy="48" r="2"/></g>
+    <path fill="#ce3947" d="M36 153q6-28 54-29t54 29z"/>
+    <ellipse cx="90" cy="85" rx="43" ry="45" fill="#f6bb92"/>
+    <path fill="#c93b49" d="M46 74Q52 7 89 10q31 2 51 37-16-9-25-5l13 24z"/>
+    <circle cx="139" cy="46" r="10" fill="#fff5df"/>
+    <path d="M49 71q38-18 79-6" fill="none" stroke="#fff5df" stroke-width="16" stroke-linecap="round"/>
+    <path d="M65 85q5-6 11-2m25-1q6-5 12 0" fill="none" stroke="#75483a" stroke-width="4" stroke-linecap="round"/>
+    <g fill="#ef9480"><ellipse cx="60" cy="94" rx="8" ry="5"/><ellipse cx="119" cy="93" rx="8" ry="5"/></g>
+    <path fill="#fff4dc" d="M48 91q9 12 25 9l17 2 17-3q17 2 25-10 6 26-10 38-8 16-29 22-26-3-40-24-9-13-5-34z"/>
+    <ellipse cx="91" cy="111" rx="9" ry="7" fill="#8c4941"/>
+    <path fill="#fffbef" d="M90 99q-13-9-27 6 16 9 27-1 12 9 27-1-15-12-27-4z"/>
+    <ellipse cx="90" cy="96" rx="9" ry="6" fill="#ea9880"/>
+  </svg>
+    <h2>Christmas countdown</h2><span id="countdown" role="timer"></span></article>
+</template>
+<dialog id="panel" aria-labelledby="heading">
+  <div class="panel-title"><div><small class="eyebrow">Kener / TV display</small>
+    <h2 id="heading">Edit view</h2></div><span id="count"></span></div>
+  <div id="picked" role="group" aria-label="Selected monitors"></div>
+  <div class="picker"><section class="sources" aria-label="Kener pages">
+  <small class="eyebrow">Kener pages</small><div id="pages"></div>
+  <form id="loadPage" hidden><label>Page path <input id="source" placeholder="/zabbix" required></label>
+    <button id="load">Load monitors</button></form>
+  </section><section class="monitors"><small class="eyebrow">Monitor selection</small>
+  <div class="selection-heading"><h3 id="scope">All loaded monitors</h3>
+    <label><input id="selectAll" type="checkbox"> Select all on this page</label></div>
+  <small>Above 12 monitors, screens rotate every 15 seconds. Down and degraded monitors always appear first. Fixed slots then use pinned monitors, followed by selection order. The optional Christmas tile stays on every screen and does not use a monitor slot.</small>
+  <div id="choices"></div></section></div>
+  <p id="notice" role="status"></p>
+  <label class="extra-tile"><input id="autoRotate" type="checkbox"> Automatically rotate screens every 15 seconds</label>
+  <label class="extra-tile"><input id="showHoliday" type="checkbox"> 🎅 Christmas countdown</label>
+  <div class="panel-footer"><label>Fixed / rotating slots <select id="slots"></select></label>
+    <button id="restore" title="Use the monitors and order from the Kener home page">Restore defaults</button><button id="cancel">Cancel</button><button id="save">Save</button></div>
+</dialog>
+<script type="module">
+const $ = id => document.getElementById(id);
+const key = "kener.tv.v1";
+const labels = new Map(Object.entries({UP:"Operational", DOWN:"Down", DEGRADED:"Degraded",
+  MAINTENANCE:"Maintenance", NO_DATA:"No data"}));
+let config = {tags:null}, catalog = [], bars = new Map(), draft;
+let error = "", lastRead = null, timer, controlsTimer, generation = 0;
+const clockFormat = new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+function updateClock() {
+  const now = Date.now();
+  $("clock").textContent = clockFormat.format(now);
+  if ($("countdown")) $("countdown").textContent = christmasCountdown(new Date(now));
+  if (lastRead === null) { $("age").textContent = "Last refresh: waiting for data"; return; }
+  const seconds = Math.max(0,Math.floor((now-lastRead)/1000));
+  $("age").textContent = `Last refresh: ${seconds}s ago`;
+}
+function christmasCountdown(now) {
+  const december = now.getMonth() === 11;
+  if (december && now.getDate() === 25) return "Merry Christmas!";
+  const year = now.getFullYear() + Number(december && now.getDate() > 25);
+  const seconds = Math.ceil((new Date(year,11,25) - now)/1000);
+  return `${Math.floor(seconds/86400)}d ${Math.floor(seconds/3600)%24}h ${Math.floor(seconds/60)%60}m ${seconds%60}s`;
+}
+try {
+  const data = JSON.parse(localStorage.getItem(key));
+  if (data && (data.tags === null || (Array.isArray(data.tags) && data.tags.every(t => typeof t === "string")))) config = data;
+} catch { /* Use defaults when storage is unavailable. */ }
+const selected = () => config.tags ?? catalog;
+const discovered = new Set();
+function latencyTrend(days) {
+  const figure = document.createElement("figure"), caption = document.createElement("figcaption");
+  figure.className = "trend";
+  const samples = (days || []).map(d =>
+    Number.isFinite(d.avgLatency) && d.avgLatency > 0 ? d.avgLatency : null);
+  const values = samples.filter(v => v !== null);
+  if (values.length) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns,"svg");
+    svg.setAttribute("viewBox","0 0 200 36"); svg.setAttribute("preserveAspectRatio","none");
+    svg.setAttribute("aria-hidden","true");
+    const max = Math.max(...values);
+    let path = "";
+    samples.forEach((v,i) => {
+      if (v === null) return;
+      const x = 2 + i * 196 / Math.max(1,samples.length-1), y = 33 - v/max*29;
+      path += `${i && samples[i-1] !== null ? "L" : "M"}${x},${y} `;
+      const point = document.createElementNS(ns,"circle"), title = document.createElementNS(ns,"title");
+      point.setAttribute("cx",x); point.setAttribute("cy",y); point.setAttribute("r","1.5");
+      point.setAttribute("fill","currentColor");
+      title.textContent = `${new Date(days[i].ts*1000).toLocaleDateString("en",{timeZone:"UTC"})}: ${v.toFixed(1)} ms`;
+      point.append(title); svg.append(point);
+    });
+    const line = document.createElementNS(ns,"path"); line.setAttribute("d",path);
+    line.setAttribute("fill","none"); line.setAttribute("stroke","currentColor");
+    line.setAttribute("stroke-width","2"); line.setAttribute("vector-effect","non-scaling-stroke");
+    svg.prepend(line); figure.append(svg);
+  }
+  caption.textContent = values.length ? `Daily avg. latency · 7 days · peak ${Math.round(Math.max(...values))} ms` : "Latency data unavailable";
+  figure.append(caption);
+  if (values.length) {
+    const series = document.createElement("p");
+    series.className = "sr-only";
+    series.textContent = days.map((day,i) => `${new Date(day.ts*1000).toLocaleDateString("en",{timeZone:"UTC"})}: ${samples[i] === null ? "No data" : samples[i].toFixed(1)+" ms"}`).join("; ");
+    figure.append(series);
+  }
+  return figure;
+}
+const capacity = 12;
+for (let fixed=0;fixed<capacity;fixed++) $("slots").add(new Option(`${fixed} fixed / ${capacity-fixed} rotating`,fixed));
+const savedSlots = () => Number.isInteger(config.fixedSlots) && config.fixedSlots>=0 && config.fixedSlots<capacity
+  ? config.fixedSlots : Math.min(config.pinned?.length || 0,capacity-1);
+let screen = 0, screens = 1, rotationTimer;
+function scheduleRotation() {
+  clearTimeout(rotationTimer);
+  if (screens > 1 && config.autoRotate !== false && !$("panel").open)
+    rotationTimer = setTimeout(nextScreen,15000);
+}
+function nextScreen() {
+  screen = (screen+1) % screens;
+  draw(); scheduleRotation();
+}
+function draw(tags = selected(), holiday = config.showHoliday !== false,
+              pinned = config.pinned || [], fixedSlots = savedSlots()) {
+  const n = tags.length;
+  const rotating = n > capacity;
+  let visible = tags;
+  const previousScreens = screens;
+  screens = 1;
+  if (rotating) {
+    const alerts = error ? [] : ["DOWN","DEGRADED"].flatMap(status=>tags.filter(t=>bars.get(t)?.currentStatus===status));
+    const normal = tags.filter(t=>!alerts.includes(t));
+    const preferred = normal.filter(t=>pinned.includes(t)).concat(normal.filter(t=>!pinned.includes(t)));
+    const fixed = alerts.concat(preferred.slice(0,Math.max(0,fixedSlots-alerts.length)));
+    const pool = tags.filter(t => !fixed.includes(t));
+    const room = Math.max(0,capacity-fixed.length);
+    screens = room ? Math.max(1,Math.ceil(pool.length/room)) : 1;
+    screen = Math.min(screen,screens-1);
+    const slice = pool.slice(screen*room,(screen+1)*room);
+    visible = fixed.concat(slice);
+  } else screen = 0;
+  $("pageNumber").hidden = screens <= 1;
+  $("pageNumber").textContent = `Page ${screen+1} of ${screens}`;
+  if (previousScreens !== screens) scheduleRotation();
+  const tileCount = Math.max(1,(rotating ? Math.max(capacity,visible.length) : n) + Number(holiday));
+  const columns = tileCount <= 3 ? tileCount : Math.ceil(Math.sqrt(tileCount));
+  $("grid").style.gridTemplateColumns = `repeat(${columns},minmax(0,1fr))`;
+  $("grid").style.gridTemplateRows = rotating && !matchMedia("(max-width:600px)").matches ? `repeat(${Math.ceil(tileCount/columns)},minmax(0,1fr))` : "";
+  $("grid").replaceChildren(...visible.map(tag => {
+    const card = document.createElement("article"), name = document.createElement("h2");
+    const text = document.createElement("span"), bar = bars.get(tag);
+    const status = error ? "" : bar?.currentStatus;
+    card.dataset.status = labels.has(status) ? status : "";
+    name.textContent = bar?.name || tag;
+    name.className = "monitor-name";
+    if (bar?.image) {
+      const logo = document.createElement("img");
+      logo.alt = ""; logo.referrerPolicy = "no-referrer";
+      logo.onerror = () => logo.remove();
+      logo.src = bar.image;
+      name.append(logo);
+    }
+    text.textContent = error ? "Status unconfirmed" : labels.get(status) || labels.get("NO_DATA");
+    text.className = "badge";
+    const metrics = document.createElement("div");
+    metrics.className = "metrics";
+    const latency = document.createElement("span");
+    const pct = Number.parseFloat(bar?.uptime);
+    metrics.append(`Uptime (7d): ${Number.isFinite(pct) ? pct.toLocaleString("en",{maximumFractionDigits:2})+"%" : "—"}`,latency);
+    if (bar?.avgLatency) latency.textContent = `Avg. latency: ${bar.avgLatency}`;
+    card.append(text, name);
+    if (bar && !error) card.append(metrics, latencyTrend(bar.uptimeData));
+    return card;
+  }));
+  if (holiday) {
+    $("grid").append($("holidayTile").content.cloneNode(true));
+    $("countdown").textContent = christmasCountdown(new Date());
+  }
+  const counts = tags.map(tag => bars.get(tag)?.currentStatus);
+  const overall = error || !n ? "NO_DATA" : ["DOWN","DEGRADED","MAINTENANCE"].find(s => counts.includes(s))
+    || (counts.every(s => s === "UP") ? "UP" : "NO_DATA");
+  $("summary").dataset.status = overall;
+  let headline = {UP:"All selected systems operational",DOWN:"Service outage",
+    DEGRADED:"Degraded performance",MAINTENANCE:"Under maintenance",NO_DATA:"Status unavailable"}[overall];
+  if (rotating && !error && (overall === "DOWN" || overall === "DEGRADED")) {
+    const first = tags[counts.indexOf(overall)];
+    headline = `${counts.filter(s=>s==="DOWN").length} Down · ${counts.filter(s=>s==="DEGRADED").length} Degraded · ${bars.get(first)?.name || first}`;
+  }
+  if ($("headline").textContent !== headline) $("headline").textContent = headline;
+  const message = error || (!n ? "No monitors" : "");
+  if ($("message").textContent !== message) $("message").textContent = message;
+}
+async function json(path) {
+  const response = await fetch(path, {cache:"no-store", signal:AbortSignal.timeout(10000)});
+  if (!response.ok) throw Error(response.status);
+  return response.json();
+}
+async function discover(path = "", includeMembers = false) {
+  const page = await json(`${path}/__data.json`);
+  for (const node of (page.nodes || []).slice().reverse()) {
+    const flat = node?.data, refs = flat?.[flat?.[0]?.monitorTags];
+    if (Array.isArray(refs) && refs.every(i => typeof flat[i] === "string")) {
+      const tags = new Set(refs.map(i => flat[i]));
+      if (includeMembers) {
+        const groups = flat[flat[0].monitorGroupMembersByTag] || {};
+        for (const tag of [...tags]) {
+          const members = flat[groups[tag]];
+          if (Array.isArray(members)) for (const i of members) if (typeof flat[i] === "string") tags.add(flat[i]);
+        }
+      }
+      return [...tags];
+    }
+  }
+  throw Error("monitorTags");
+}
+async function refresh() {
+  clearTimeout(timer);
+  const current = ++generation;
+  try {
+    const available = config.tags ? catalog : await discover(), next = new Map();
+    const tags = config.tags ?? available;
+    for (let i = 0; i < tags.length; i += 100) {
+      const query = new URLSearchParams({tags:tags.slice(i,i+100).join(","),days:7,
+        endOfDayTodayAtTz:(Math.floor(Date.now()/86400000)+1)*86400});
+      const result = await json("/dashboard-apis/monitor-bars?" + query);
+      if (!result.data || typeof result.data !== "object") throw Error("monitor-bars");
+      for (const [tag, bar] of Object.entries(result.data)) next.set(tag, bar);
+    }
+    if (current !== generation) return;
+    catalog = available; bars = next; error = ""; lastRead = Date.now(); updateClock();
+  } catch {
+    if (current !== generation) return;
+    error = "Could not fetch data from Kener";
+  }
+  preview();
+  timer = setTimeout(refresh, 30000);
+}
+function preview() {
+  if ($("panel").open) draw(draft.filter(x => x.on).map(x => x.tag), $("showHoliday").checked, draft.filter(x=>x.pin).map(x=>x.tag), Number($("slots").value));
+  else draw();
+}
+let pageTags = null, homeDefaults = null;
+const visibleChoices = () => draft.filter(x => !pageTags || pageTags.has(x.tag));
+$("selectAll").onchange = () => {
+  for (const item of visibleChoices()) {
+    item.on = $("selectAll").checked;
+    if (!item.on) item.pin = false;
+  }
+  choices(); preview();
+};
+function updateCount() {
+  const visible = visibleChoices(), checked = visible.filter(x => x.on).length;
+  $("selectAll").disabled = !visible.length;
+  $("selectAll").checked = checked > 0 && checked === visible.length;
+  $("selectAll").indeterminate = checked > 0 && checked < visible.length;
+  const picked = draft.filter(x => x.on);
+  $("count").textContent = `${picked.length} selected`;
+  $("picked").replaceChildren(...picked.map(item => {
+    const button = document.createElement("button"), name = bars.get(item.tag)?.name || item.tag;
+    button.textContent = `${name} ×`; button.setAttribute("aria-label",`Remove ${name}`);
+    button.onclick = () => {
+      const index = picked.indexOf(item);
+      item.on = item.pin = false; choices(); preview();
+      const remaining = $("picked").children;
+      (remaining[Math.min(index,remaining.length-1)] || $("cancel")).focus();
+    };
+    return button;
+  }));
+  if (!picked.length) $("picked").textContent = "No monitors selected";
+}
+function choices() {
+  updateCount();
+  const visible = visibleChoices();
+  $("choices").replaceChildren(...visible.map((item, i) => {
+    const row = document.createElement("div"), label = document.createElement("label");
+    const box = document.createElement("input"), buttons = document.createElement("span");
+    const name = bars.get(item.tag)?.name || item.tag;
+    buttons.className = "move-actions";
+    box.type = "checkbox"; box.checked = item.on;
+    const pinLabel = document.createElement("label"), pin = document.createElement("input");
+    pinLabel.className = "pin-option";
+    pin.type = "checkbox"; pin.checked = !!item.pin; pin.disabled = !item.on;
+    pin.setAttribute("aria-label",`Keep visible: ${name}`);
+    pinLabel.append(pin,"Keep visible");
+    pin.onchange = () => {
+      if (pin.checked && draft.filter(x=>x.on && x.pin).length >= capacity-1) {
+        pin.checked = false; $("notice").textContent = "Keep at least one slot for rotating monitors."; return;
+      }
+      item.pin = pin.checked; $("notice").textContent = ""; preview();
+      if (pin.checked && Number($("slots").value)<draft.filter(x=>x.on && x.pin).length) {
+        $("slots").value = draft.filter(x=>x.on && x.pin).length; preview();
+      }
+    };
+    box.onchange = () => { item.on = box.checked; pin.disabled = !item.on; if (!item.on) item.pin = pin.checked = false; updateCount(); preview(); };
+    label.append(box, " " + name);
+    for (const delta of [-1,1]) {
+      const b = document.createElement("button");
+      b.textContent = delta < 0 ? "Move up" : "Move down";
+      b.setAttribute("aria-label", `${b.textContent}: ${name}`);
+      b.setAttribute("aria-disabled",String(!visible[i+delta]));
+      b.onclick = event => {
+        if (!visible[i+delta]) return;
+        const top = b.getBoundingClientRect().top;
+        const a = draft.indexOf(item), c = draft.indexOf(visible[i+delta]);
+        [draft[a],draft[c]] = [draft[c],draft[a]]; choices(); preview();
+        const row = $("choices").children[i+delta];
+        const sameDirection = row.querySelectorAll("button")[delta < 0 ? 0 : 1];
+        $("notice").textContent = `${name}: position ${i+delta+1} of ${visible.length} on this page.`;
+        sameDirection.focus({preventScroll:event.detail > 0});
+        if (event.detail > 0) {
+          const list = $("choices"), pane = list.closest(".monitors");
+          list.style.padding = "";
+          const offset = pane.scrollTop + sameDirection.getBoundingClientRect().top - top;
+          // Allow the first and last rows to stay under the pointer at the scroll limits.
+          list.style.paddingTop = `${Math.max(0,-offset)}px`;
+          list.style.paddingBottom = `${Math.max(0,offset-pane.scrollHeight+pane.clientHeight)}px`;
+          pane.scrollTop += sameDirection.getBoundingClientRect().top - top;
+        }
+      };
+      buttons.append(b);
+    }
+    row.append(label, pinLabel, buttons); return row;
+  }));
+}
+let editorVersion = 0, pageRequest = 0;
+function pageButton(title,path) {
+  const button = document.createElement("button");
+  button.textContent = title; button.setAttribute("aria-pressed", String(path === null));
+  button.onclick = () => {
+    $("choices").style.padding = "";
+    for (const b of $("pages").children) b.setAttribute("aria-pressed", String(b === button));
+    $("scope").textContent = title;
+    if (path === null) {
+      pageRequest++; pageTags = null; choices(); $("notice").textContent = ""; $("load").disabled = false; return;
+    }
+    $("source").value = path;
+    $("loadPage").requestSubmit();
+  };
+  return button;
+}
+$("loadPage").onsubmit = async event => {
+  event.preventDefault();
+  const version = editorVersion, request = ++pageRequest, input = $("source").value.trim();
+  const path = input.replace(/^https?:\/\/[^/]+/i, "").replace(/^\/+|\/+$/g, "");
+  if (path && !/^[a-zA-Z0-9_-]+$/.test(path)) {
+    $("notice").textContent = "Enter a Kener page path such as /zabbix."; return;
+  }
+  $("load").disabled = true;
+  pageTags = new Set(); choices(); $("notice").textContent = "Loading monitors…";
+  try {
+    const tags = await discover(path ? `/${path}` : "", true);
+    if (version !== editorVersion || request !== pageRequest) return;
+    const existing = new Set(draft.map(item => item.tag));
+    for (const tag of tags) {
+      discovered.add(tag);
+      if (!existing.has(tag)) { draft.push({tag,on:false}); existing.add(tag); }
+    }
+    pageTags = new Set(tags); choices(); $("notice").textContent = tags.length ? "" : "No monitors on this page.";
+  } catch {
+    if (version === editorVersion && request === pageRequest) $("notice").textContent = "Could not load monitors from that page.";
+  } finally { if (version === editorVersion && request === pageRequest) $("load").disabled = false; }
+};
+$("edit").onclick = async () => {
+  clearTimeout(rotationTimer);
+  $("choices").style.padding = "";
+  const version = ++editorVersion;
+  homeDefaults = config.tags === null ? [...catalog] : null;
+  $("showHoliday").checked = config.showHoliday !== false;
+  $("slots").value = savedSlots();
+  $("autoRotate").checked = config.autoRotate !== false;
+  $("restore").disabled = $("save").disabled = false;
+  pageTags = null; $("scope").textContent = "All loaded monitors";
+  draft = [...new Set([...selected(), ...catalog, ...discovered])].map(tag => ({tag,on:selected().includes(tag)}));
+  for (const item of draft) item.pin = (config.pinned || []).includes(item.tag);
+  $("load").disabled = false;
+  $("notice").textContent = ""; choices(); $("panel").showModal();
+  $("pages").replaceChildren(pageButton("All loaded monitors",null));
+  $("loadPage").hidden = true;
+  try {
+    const pages = await json("/dashboard-apis/pages");
+    if (version !== editorVersion) return;
+    for (const page of pages) {
+      if (typeof page.page_path === "string" && /^[\w-]*$/.test(page.page_path))
+        $("pages").append(pageButton(page.page_title?.trim() || "Home","/"+page.page_path));
+    }
+    if ($("pages").childElementCount === 1) throw Error("No pages");
+  } catch {
+    if (version !== editorVersion) return;
+    $("loadPage").hidden = false;
+    $("notice").textContent = "Page list unavailable. Enter a page path instead.";
+  }
+  if (!catalog.length && config.tags) {
+    try {
+      const home = await discover();
+      if (version !== editorVersion) return;
+      catalog = home;
+      for (const tag of home) if (!draft.some(x => x.tag === tag)) draft.push({tag,on:false});
+      choices();
+    } catch { /* Saved selections remain editable when the home page is unavailable. */ }
+  }
+};
+$("restore").onclick = async () => {
+  const version = editorVersion;
+  $("restore").disabled = $("save").disabled = true;
+  try {
+    const tags = await discover();
+    if (version !== editorVersion || !$("panel").open) return;
+    const home = new Set(tags);
+    draft = [...tags.map(tag => ({tag,on:true})), ...draft.filter(x => !home.has(x.tag)).map(x => ({...x,on:false}))];
+    homeDefaults = tags;
+    $("pages").firstElementChild.click();
+    $("notice").textContent = "Home page selection restored. Save to apply.";
+    preview();
+  } catch {
+    if (version === editorVersion) $("notice").textContent = "Could not load the home page. Your selection has not changed.";
+  } finally {
+    if (version === editorVersion) $("restore").disabled = $("save").disabled = false;
+  }
+};
+$("slots").onchange = preview;
+$("showHoliday").onchange = preview;
+$("cancel").onclick = () => $("panel").close();
+$("panel").onclose = () => { editorVersion++; draw(); scheduleRotation(); };
+$("save").onclick = () => {
+  const tags = draft.filter(x => x.on).map(x => x.tag);
+  const followHome = homeDefaults !== null && tags.length === homeDefaults.length && tags.every((tag,i) => tag === homeDefaults[i]);
+  if (!tags.length && !followHome) { $("notice").textContent = "Select at least one monitor."; return; }
+  const next = {tags:followHome ? null : tags,fixedSlots:Number($("slots").value),autoRotate:$("autoRotate").checked,showHoliday:$("showHoliday").checked,pinned:draft.filter(x=>x.on && x.pin).map(x=>x.tag)};
+  try { localStorage.setItem(key, JSON.stringify(next)); }
+  catch { $("notice").textContent = "Could not save settings in this browser."; return; }
+  config = next; screen = 0; $("panel").close(); refresh();
+};
+function showControls() {
+  document.body.classList.add("controls"); clearTimeout(controlsTimer);
+  controlsTimer = setTimeout(() => document.body.classList.remove("controls"), 4000);
+}
+document.addEventListener("pointermove", event => {
+  if (event.pointerType === "mouse" && (event.movementX || event.movementY)) showControls();
+});
+updateClock(); setInterval(updateClock,1000); refresh();
+</script>
+</html>
