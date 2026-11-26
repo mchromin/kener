@@ -7,6 +7,14 @@
 * { box-sizing: border-box }
 :root { color-scheme: dark; --bg:#101316; --surface:#191d21; --line:#343b42; --muted:#b2bac2; --accent:#88939d }
 body { margin:0; height:100vh; height:100dvh; display:grid; grid-template-rows:auto 1fr; padding:clamp(10px,1.4vw,30px); gap:clamp(8px,1.2vw,24px); background:var(--bg); color:#f6f8fa; font:1rem system-ui,sans-serif }
+body { isolation:isolate }
+#snowfield,#snowfront { position:fixed; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none }
+#snowfront { z-index:1 }
+#santaLayer { position:fixed; inset:0; overflow:hidden; z-index:2; pointer-events:none }
+#shoveller { position:absolute; top:0; left:0; width:clamp(130px,17vw,310px); will-change:transform }
+#shoveller > svg { display:block; width:100%; overflow:visible }
+#holiday .santa { overflow:hidden }
+body:has(#shoveller:not([hidden])) #holiday .portrait { transform:translateY(var(--slide,0%)); transform-box:view-box }
 article, dialog, #summary { border:1px solid var(--line); background:var(--surface); border-radius:18px }
 header { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:.7rem }
 header h1 { margin:0; font-size:clamp(1.3rem,2.1vw,2.6rem); line-height:1.1; letter-spacing:-.035em; text-align:center }
@@ -23,9 +31,11 @@ article :is(strong,h2) { margin:0; font-size:clamp(1.32rem,7cqw,3.2rem); line-he
 [data-status="DEGRADED"] { --accent:#ffca76 }
 [data-status="DOWN"] { --accent:#ff858e }
 [data-status="MAINTENANCE"] { --accent:#99b9ff }
-:is(article,#summary)[data-status="DEGRADED"] { background:#703509; border-color:#f3a448; --muted:#ffe2bf }
+:is(article,#summary)[data-status="DEGRADED"] { background:#dac789; border-color:#eddaa1; color:#231f12; --muted:#403923; --accent:#514522; --line:#928250 }
 :is(article,#summary)[data-status="DOWN"] { background:#741f2c; border-color:#ff7889; --muted:#ffe0e5 }
 article:is([data-status="DOWN"],[data-status="DEGRADED"]) .badge { color:white; background:#0004 }
+article[data-status="DEGRADED"] .badge { background:#fff6; color:#282200 }
+article[data-status="DEGRADED"] .trend svg { color:#463900 }
 :focus-visible { outline:3px solid #a4dcff; outline-offset:2px }
 .sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap }
 @keyframes outage-pulse {
@@ -40,14 +50,22 @@ article:is([data-status="DOWN"],[data-status="DEGRADED"]) .badge { color:white; 
 .trend { margin:.2em 0 0; color:var(--muted); font-size:clamp(.95rem,3.6cqw,1.22rem) }
 .trend svg { display:block; width:100%; height:clamp(24px,18cqh,72px); color:#89bde7; background:linear-gradient(transparent 96%,var(--line) 96%) }
 .trend figcaption { margin-top:.3em }
+.plot { display:flex; align-items:stretch; gap:.4em; min-height:0 }
+.plot svg { flex:1; min-width:0 }
+.scale { display:flex; flex-direction:column; justify-content:space-between; font-size:.72em; line-height:1 }
+.scale:has(:only-child) { justify-content:center }
 #holiday { align-items:center; text-align:center; background:#162b27; border-color:#34554b }
 #holiday .santa { display:block; width:min(76cqw,70cqh); height:60cqh; flex-shrink:1; min-height:0 }
 #countdown { color:#c6e6d5; font-size:min(5cqw,13cqh); font-variant-numeric:tabular-nums }
-@container (max-height:155px) {
-  article > :is(strong,h2) { font-size:min(5.6cqw,15cqh,1.58rem) }
-  .badge { font-size:min(4.2cqw,11.5cqh,1.1rem) }
-  .metrics,.trend { font-size:min(3.6cqw,10.5cqh,.95rem) }
-  .trend svg { height:17cqh }
+@media (min-width:601px) {
+  article:not(#holiday) { justify-content:flex-start }
+  .monitor-name { font-size:min(9cqw,15cqh); line-height:1.04 }
+  .monitor-name span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden }
+  .badge { font-size:min(6cqw,10cqh); padding:.12em .65em }
+  .metrics,.trend { font-size:min(5.6cqw,9cqh); line-height:1.12 }
+  .trend { display:flex; flex:1; flex-direction:column; justify-content:flex-end; min-height:0; margin:0 }
+  .trend .plot { flex:1 }
+  .trend svg { min-height:0; height:auto }
 }
 #picked { display:flex; flex-wrap:wrap; gap:.35rem; max-height:15vh; overflow:auto; padding:.6rem 1.35rem; border-bottom:1px solid var(--line) }
 #picked button { font-size:.8rem; border-radius:2rem; color:#c6f5de; background:#21382e; border-color:#395949 }
@@ -114,6 +132,35 @@ h2,h3 { margin:.25em 0; letter-spacing:-.025em }
   #pages button { flex:none }
 }
 </style>
+<canvas id="snowfield" hidden aria-hidden="true"></canvas>
+<canvas id="snowfront" hidden aria-hidden="true"></canvas>
+<div id="santaLayer" aria-hidden="true"><div id="shoveller" hidden>
+  <svg id="traveller" viewBox="0 0 252 180">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path id="farLeg" stroke="#88313a" stroke-width="14"/><path id="farBoot" stroke="#282c35" stroke-width="15"/>
+      <path id="nearLeg" stroke="#b84248" stroke-width="16"/><path id="nearBoot" stroke="#373a44" stroke-width="16"/>
+    </g>
+    <g id="coat">
+      <path d="M37 84q19-15 41 2l12 51q-26 12-61-1z" fill="#ca3b42"/>
+      <path d="M32 123q25 8 54 0" fill="none" stroke="#423941" stroke-width="8"/>
+      <rect x="64" y="121" width="10" height="8" rx="2" fill="#ffcf67"/>
+    </g>
+    <g stroke-linecap="round" fill="none" stroke-linejoin="round">
+      <path id="farArm" stroke="#953039" stroke-width="12"/><path id="farHand" stroke="#e9cfa6" stroke-width="10"/>
+      <path id="nearArm" stroke="#e45352" stroke-width="14"/><path id="nearHand" stroke="#fff1d2" stroke-width="11"/>
+    </g>
+  </svg>
+  <svg id="blower" x="101" y="94" width="147" height="82" viewBox="0 0 147 82">
+    <path d="M4 13h14l40 40" fill="none" stroke="#aab9c5" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="57" cy="63" r="16" fill="#192128" stroke="#788792" stroke-width="4"/><circle cx="57" cy="63" r="6" fill="#aab9c5"/>
+    <path d="M40 43h65v20H76l-7-12H40z" fill="#df472d"/>
+    <rect x="48" y="24" width="43" height="22" rx="4" fill="#353c42" stroke="#959fa6" stroke-width="2"/>
+    <rect x="51" y="17" width="32" height="10" rx="3" fill="#e24f32"/><path d="M55 32h17m-17 5h17" stroke="#9eacb4" stroke-width="2"/>
+    <path d="M86 46l1-29 12-11 13 3-6 10-7 1 4 25z" fill="#525e66" stroke="#b6c4cf" stroke-width="3"/>
+    <path d="M88 46q20-18 40-5l12 29-53 2z" fill="#df472d" stroke="#ff9660" stroke-width="3"/>
+    <path d="M102 64q9-22 15-6t13-2" fill="none" stroke="#352e2e" stroke-width="5"/>
+  </svg>
+</div></div>
 <header><div id="summary" role="status" aria-label="Service status"><strong id="headline">Connecting to Kener</strong></div>
 <h1>OLE services status</h1><div class="tools">
 <small id="pageNumber" hidden></small>
@@ -124,7 +171,7 @@ h2,h3 { margin:.25em 0; letter-spacing:-.025em }
 <main id="grid" aria-label="Monitor status"></main>
 <template id="holidayTile">
   <article id="holiday"><svg class="santa" viewBox="0 0 180 160" aria-hidden="true">
-    <circle cx="90" cy="82" r="70" fill="#22463d"/>
+    <g class="portrait"><circle cx="90" cy="82" r="70" fill="#22463d"/>
     <g fill="#ffe3a0"><path d="m26 46 2 6 6 2-6 2-2 6-2-6-6-2 6-2zM151 91l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/><circle cx="144" cy="48" r="2"/></g>
     <path fill="#ce3947" d="M36 153q6-28 54-29t54 29z"/>
     <ellipse cx="90" cy="85" rx="43" ry="45" fill="#f6bb92"/>
@@ -137,6 +184,11 @@ h2,h3 { margin:.25em 0; letter-spacing:-.025em }
     <ellipse cx="91" cy="111" rx="9" ry="7" fill="#8c4941"/>
     <path fill="#fffbef" d="M90 99q-13-9-27 6 16 9 27-1 12 9 27-1-15-12-27-4z"/>
     <ellipse cx="90" cy="96" rx="9" ry="6" fill="#ea9880"/>
+    <g class="wave-arm" transform="rotate(74 126 141)">
+      <path d="M126 141q15-9 19-25" stroke="#cd4048" stroke-width="14" stroke-linecap="round" fill="none"/>
+      <path d="m140 117 11 3" stroke="#fff4dc" stroke-width="5" stroke-linecap="round"/>
+      <path d="M142 115q-7-10-3-12 2-1 5 3 2-12 7-10 6 2 2 14l-3 7z" fill="#e9b38d"/>
+    </g></g>
   </svg>
     <h2>Christmas countdown</h2><span id="countdown" role="timer"></span></article>
 </template>
@@ -151,16 +203,221 @@ h2,h3 { margin:.25em 0; letter-spacing:-.025em }
   </section><section class="monitors"><small class="eyebrow">Monitor selection</small>
   <div class="selection-heading"><h3 id="scope">All loaded monitors</h3>
     <label><input id="selectAll" type="checkbox"> Select all on this page</label></div>
-  <small>Above 12 monitors, screens rotate every 15 seconds. Down and degraded monitors always appear first. Fixed slots then use pinned monitors, followed by selection order. The optional Christmas tile stays on every screen and does not use a monitor slot.</small>
+  <small>Above 12 monitors, one rotating slot changes every 15 seconds. Fixed slots prioritize outages, degraded services, then pinned monitors. The Christmas tile does not use a monitor slot.</small>
   <div id="choices"></div></section></div>
   <p id="notice" role="status"></p>
-  <label class="extra-tile"><input id="autoRotate" type="checkbox"> Automatically rotate screens every 15 seconds</label>
-  <label class="extra-tile"><input id="showHoliday" type="checkbox"> 🎅 Christmas countdown</label>
+  <label class="extra-tile"><input id="autoRotate" type="checkbox"> Replace one monitor every 15 seconds</label>
+  <label class="extra-tile"><input id="showHoliday" type="checkbox"> 🎅 Christmas countdown (press V to wave)</label>
+  <label class="extra-tile"><input id="showSnow" type="checkbox"> Falling snow (press S on the dashboard to call Santa)</label>
   <div class="panel-footer"><label>Fixed / rotating slots <select id="slots"></select></label>
     <button id="restore" title="Use the monitors and order from the Kener home page">Restore defaults</button><button id="cancel">Cancel</button><button id="save">Save</button></div>
 </dialog>
 <script type="module">
 const $ = id => document.getElementById(id);
+const snow = $("snowfield"), reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const snowfront = $("snowfront");
+const helper=$("shoveller"), santa=$("holidayTile").content.querySelector(".santa").cloneNode(true);
+// The travelling sprite uses the same Santa as the tile, but leaves room for the machine.
+santa.querySelector("circle").remove();
+santa.querySelector(".wave-arm").remove();
+santa.setAttribute("x","3"); santa.setAttribute("y","5");
+santa.setAttribute("width","105"); santa.setAttribute("height","94");
+$("coat").append(santa); $("traveller").append($("blower"));
+const limbs=["far","near"].map((side,i)=>({i,leg:$(side+"Leg"),boot:$(side+"Boot"),arm:$(side+"Arm"),hand:$(side+"Hand")}));
+function poseSanta(stride,air,impact) {
+  const bob=2*Math.abs(Math.sin(stride)) - impact*5;
+  $("coat").setAttribute("transform",`translate(0 ${-bob})`);
+  for (const {i,leg,boot,arm,hand} of limbs) {
+    const phase=stride+i*Math.PI, hip=48+13*i, step=Math.sin(phase);
+    const foot=hip+15*step*(1-air)-air*(9+i*6);
+    const sole=166-10*Math.max(0,Math.cos(phase))*(1-air)-(12+i*7)*air;
+    leg.setAttribute("d",`M${hip} ${133-bob} Q${hip+10+step*6+air*14} ${149-bob} ${foot} ${sole}`);
+    boot.setAttribute("d",`M${foot} ${sole} l10 2`);
+    const grip=106+i*7, gripY=108+i*2;
+    arm.setAttribute("d",`M${58+i*10} ${91-bob} Q${72+i*6} ${119-bob+air*6} ${grip} ${gripY}`);
+    hand.setAttribute("d",`M${grip-3} ${gripY} l5 1`);
+  }
+}
+let spray=[], emission=0;
+let sweep=null, rest=0, callSanta=false, checkBankIn=0;
+let waveFrame=0;
+function waveSanta() {
+  if (!$("holiday") || document.hidden || $("panel").open || reducedMotion.matches) return;
+  cancelAnimationFrame(waveFrame);
+  const start=performance.now();
+  function frame(now) {
+    const p=Math.min(1,(now-start)/1800);
+    const lift=reducedMotion.matches ? 0 : Math.min(1,p*5,(1-p)*5);
+    const angle=lift*(-74+17*Math.sin(p*6*Math.PI));
+    $("holiday")?.querySelector(".wave-arm").setAttribute("transform",`rotate(${74+angle} 126 141)`);
+    for (const part of [limbs[1].arm,limbs[1].hand]) part.setAttribute("transform",`rotate(${angle} 68 91)`);
+    if (p<1 && !reducedMotion.matches && $("holiday")) waveFrame=requestAnimationFrame(frame);
+    else for (const part of [limbs[1].arm,limbs[1].hand]) part.removeAttribute("transform");
+  }
+  waveFrame=requestAnimationFrame(frame);
+}
+setInterval(waveSanta,30000);
+document.addEventListener("keydown",event=>{
+  if (event.key.toLowerCase()==="v" && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) waveSanta();
+  if (event.key.toLowerCase()!=="s" || event.repeat || event.ctrlKey || event.metaKey || event.altKey ||
+      $("panel").open || snow.hidden || !$("holiday") || reducedMotion.matches || sweep) return;
+  rest=0; callSanta=true;
+  for (let i=0;i<drift.length;i++)
+    drift[i]=Math.max(drift[i],Math.min(70,snow.height*.09)*(1+.2*Math.abs(Math.sin(i*.14))));
+});
+function shovelSnow(dt,w,h) {
+  const tile=$("holiday")?.querySelector(".santa");
+  if (!tile || reducedMotion.matches || $("panel").open) { sweep=null; spray=[]; helper.hidden=true; return; }
+  if (!sweep) {
+    rest=Math.max(0,rest-dt);
+    checkBankIn-=dt;
+    if (rest || !dt || (!callSanta && checkBankIn>0)) return;
+    checkBankIn=1;
+    if (!callSanta) {
+      const card=$("grid").lastElementChild?.getBoundingClientRect();
+      if (!card) return;
+      const captions=[...$("grid").querySelectorAll(".trend figcaption")].map(c=>c.getBoundingClientRect())
+        .filter(c=>c.top>=card.top && c.bottom<=h);
+      const captionLevel=captions.length ? h-Math.max(...captions.map(c=>c.bottom-c.height*.4)) : 0;
+      const depth=Math.max(captionLevel,Math.min(82,h*.105));
+      if (drift.filter(v=>v>=depth).length<drift.length*.6) return;
+    }
+    const r=tile.getBoundingClientRect();
+    if (r.bottom<=0 || r.top>=h) return;
+    const x=r.left+r.width/2;
+    callSanta=false; sweep={time:0,dir:x>w/2 ? -1 : 1};
+    helper.hidden=false;
+  }
+  const s=sweep, t=s.time+=dt, size=helper.offsetWidth;
+  const nose=size*.40, margin=size*.65, start=s.dir===1 ? -margin : w+margin, end=w-start;
+  const pass=5, turn=1+pass+.25, finish=turn+pass+.25;
+  const returning=t>=turn, dir=returning ? -s.dir : s.dir;
+  const travel=Math.min(1,Math.max(0,(t-(returning ? turn : 1))/pass));
+  const progress=travel*travel*(3-2*travel);
+  const walk=returning ? end+(start-end)*progress : start+(end-start)*progress;
+  const bin=Math.max(0,Math.min(drift.length-1,Math.floor(walk/12)));
+  const target=h-Math.min(drift[bin],h*.45)-size*.31;
+  const ground=s.ground=(s.ground??target)+(target-(s.ground??target))*(1-Math.exp(-dt*12));
+  const slide=Math.max(0,Math.min(1,t,finish+1-t));
+  $("grid").style.setProperty("--slide",`${105*slide*slide*(3-2*slide)}%`);
+  if (t>=1 && t<=finish) {
+    const blade=(walk+dir*nose)/12;
+    emission+=dt*70;
+    while (emission>=1) {
+      emission--;
+      if (blade>=0 && blade<drift.length) spray.push({x:walk+dir*size*.32,y:ground+size*.05,age:0,
+        vx:(Math.random()-.5)*size*2,vy:-(.5+Math.random())*size,r:1+Math.random()*2.5});
+    }
+    for (let j=Math.max(0,Math.floor(blade)-3);j<=Math.min(drift.length-1,Math.ceil(blade)+3);j++)
+      drift[j]*=Math.exp(-dt*26*Math.max(0,1-Math.abs(j-blade)/4));
+  }
+  const distance=(returning ? 1+progress : progress)*Math.abs(end-start);
+  poseSanta(distance/(size*.17)*Math.PI,0,0);
+  helper.style.transform=`translate(${walk}px,${ground}px) translate(-50%,-50%) scaleX(${dir})`;
+  if (t>=finish+1) { helper.hidden=true; sweep=null; rest=45; }
+}
+let flakes = [], drift = [], snowFrame = 0, lastFrame = 0, gustAt = 0, gustSpeed = 0;
+const crystal = new Path2D();
+for (let arm=0;arm<6;arm++) {
+  const branch = new Path2D("M0 0V-8M-2.6-6.5 0-4 2.6-6.5");
+  crystal.addPath(branch,new DOMMatrix().rotate(arm*60));
+}
+function snowflake(x,y) {
+  return {x,y,size:.48+Math.random()*.65,speed:30+Math.random()*54,
+    angle:Math.random()*6,spin:Math.random()-.5,phase:Math.random()*6};
+}
+let powder=[], liftCredit=0, gustOrigin=.5;
+function blowSnow(layer,dt,w,h,wind,bankHeight) {
+  const dir=Math.sign(wind), strength=Math.abs(wind);
+  const sourceX=w*gustOrigin+wind*.6;
+  liftCredit+=dt*Math.max(0,strength-24)*.7;
+  while (liftCredit>=1) {
+    liftCredit--;
+    const from=Math.round((sourceX+(Math.random()-.5)*95)/12);
+    if (!(drift[from]>2)) continue;
+    const to=Math.max(0,Math.min(drift.length-1,from+dir*(5+Math.floor(Math.random()*9))));
+    if (from===to) continue;
+    drift[from]--;
+    powder.push({from,to,age:0,life:.8+Math.random()*.7,startY:h-drift[from],
+      radius:10+Math.random()*20,size:.23+Math.random()*.35});
+  }
+  for (let i=powder.length-1;i>=0;i--) {
+    const p=powder[i], t=Math.min(1,(p.age+=dt)/p.life);
+    if (t===1) {
+      drift[p.to]=Math.min(bankHeight*1.08,drift[p.to]+1);
+      powder.splice(i,1); continue;
+    }
+    const arc=Math.sin(Math.PI*t), phase=2*Math.PI*t;
+    const x=12*(p.from+(p.to-p.from)*t)+Math.sign(p.to-p.from)*p.radius*arc*Math.sin(phase);
+    const y=p.startY+(h-drift[p.to]-p.startY)*t-p.radius*arc*(2.2-Math.cos(phase));
+    layer.save(); layer.translate(x,y); layer.rotate(phase); layer.scale(p.size,p.size);
+    layer.stroke(crystal); layer.restore();
+  }
+}
+function paintSnow(time) {
+  snowFrame = 0;
+  const w = snow.clientWidth, h = snow.clientHeight;
+  if (!w || !h) return;
+  if (snow.width!==w || snow.height!==h || !flakes.length) {
+    snowfront.width=snow.width=w; snowfront.height=snow.height=h;
+    flakes=Array.from({length:Math.min(140,Math.ceil(w*h/11000))},()=>snowflake(Math.random()*w,Math.random()*h));
+    drift=Array(Math.ceil(w/12)+1).fill(0);
+    powder=[]; liftCredit=0;
+    gustAt=time+3000+Math.random()*5000;
+  }
+  const g=snow.getContext("2d"), dt=reducedMotion.matches ? 0 : Math.min(.08,(time-(lastFrame || time))/1000);
+  lastFrame=time;
+  if (time>=gustAt+3200) {
+    gustAt=time+6000+Math.random()*11000;
+    gustOrigin=.2+Math.random()*.6;
+    gustSpeed=(Math.random()<.5 ? -1 : 1)*(80+Math.random()*100);
+  }
+  if (!gustSpeed) gustSpeed=110;
+  const wind=time<gustAt ? 0 : gustSpeed*Math.sin(Math.PI*(time-gustAt)/3200);
+  const bottomCard=$("grid").lastElementChild?.getBoundingClientRect();
+  const bankHeight=bottomCard ? Math.min(h*.85,Math.max(h*.05,h-bottomCard.top+10)) : h*.05;
+  const front=snowfront.getContext("2d");
+  for (const layer of [g,front]) {
+    layer.clearRect(0,0,w,h); layer.strokeStyle="#e1f4ff"; layer.lineWidth=1.3; layer.lineCap="round";
+  }
+  for (let i=0;i<flakes.length;i++) {
+    const f=flakes[i];
+    f.x=(f.x+dt*(wind*f.size+14*Math.sin(time/1400+f.phase))+w)%w;
+    f.y+=dt*f.speed; f.angle+=dt*f.spin;
+    const bin=Math.floor(f.x/12);
+    if (f.y>=h-drift[bin]) {
+      for (let j=Math.max(0,bin-3);j<=Math.min(drift.length-1,bin+3);j++)
+        drift[j]=Math.min(bankHeight*(1+.035*Math.sin(j*.1)+.025*Math.cos(j*.23)),drift[j]+(4-Math.abs(j-bin))*f.size*1.6);
+      flakes[i]=snowflake(Math.random()*w,-10); continue;
+    }
+    const layer=i%8===0 ? g : front;
+    layer.save(); layer.globalAlpha=layer===front ? .55 : 1; layer.translate(f.x,f.y); layer.rotate(f.angle); layer.scale(f.size,f.size);
+    layer.stroke(crystal); layer.restore();
+  }
+  shovelSnow(dt,w,h);
+  front.beginPath(); front.moveTo(0,h);
+  drift.forEach((depth,i)=>front.lineTo(i*12,h-depth));
+  front.lineTo(w,h); front.closePath(); front.fillStyle="#d7eaf5"; front.fill();
+  if (!reducedMotion.matches) blowSnow(front,dt,w,h,wind,bankHeight);
+  front.save(); front.fillStyle="#f5fbff";
+  spray=spray.filter(p=>p.age<1);
+  for (const p of spray) {
+    p.age+=dt;
+    const a=p.age, zoom=1+3*a*a;
+    front.globalAlpha=Math.max(0,1-a*a);
+    front.beginPath(); front.arc(p.x+p.vx*a*zoom,p.y+p.vy*a*zoom+h*.12*a*a,p.r*zoom*zoom,0,Math.PI*2); front.fill();
+  }
+  front.restore();
+  if (!reducedMotion.matches) snowFrame=requestAnimationFrame(paintSnow);
+}
+function syncSnow() {
+  cancelAnimationFrame(snowFrame); lastFrame=0;
+  if (snow.hidden || reducedMotion.matches) { helper.hidden=true; sweep=null; spray=[]; }
+  if (!snow.hidden && !document.hidden) snowFrame=requestAnimationFrame(paintSnow);
+}
+reducedMotion.addEventListener("change",syncSnow);
+document.addEventListener("visibilitychange",syncSnow);
+window.addEventListener("resize",syncSnow);
 const key = "kener.tv.v1";
 const labels = new Map(Object.entries({UP:"Operational", DOWN:"Down", DEGRADED:"Degraded",
   MAINTENANCE:"Maintenance", NO_DATA:"No data"}));
@@ -188,42 +445,68 @@ try {
 } catch { /* Use defaults when storage is unavailable. */ }
 const selected = () => config.tags ?? catalog;
 const discovered = new Set();
-function latencyTrend(days) {
-  const figure = document.createElement("figure"), caption = document.createElement("figcaption");
-  figure.className = "trend";
-  const samples = (days || []).map(d =>
+const historyCache = new Map();
+function latencyTrend(tag) {
+  let entry = historyCache.get(tag);
+  if (!entry) {
+    const figure=document.createElement("figure"), caption=document.createElement("figcaption");
+    figure.className="trend"; caption.textContent="Loading latency…"; figure.append(caption);
+    entry={figure,caption,time:0};
+    historyCache.set(tag,entry);
+  }
+  if (Date.now()-entry.time>=60000) {
+    entry.time=Date.now();
+    json("/dashboard-apis/monitor-latency-chart?" + new URLSearchParams({tag,range:"1h"}))
+      .then(result=>{
+        if (!Array.isArray(result.data)) throw Error("latency");
+        entry.figure.replaceChildren();
+        paintLatency(entry.figure,entry.caption,result.data);
+      }).catch(()=>{
+        entry.caption.textContent=entry.figure.querySelector("svg") ? "Latency (ms) · last update unavailable" : "Latency data unavailable";
+      });
+  }
+  return entry.figure;
+}
+function paintLatency(figure,caption,points) {
+  const samples = points.map(d =>
     Number.isFinite(d.avgLatency) && d.avgLatency > 0 ? d.avgLatency : null);
   const values = samples.filter(v => v !== null);
   if (values.length) {
     const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns,"svg");
     svg.setAttribute("viewBox","0 0 200 36"); svg.setAttribute("preserveAspectRatio","none");
     svg.setAttribute("aria-hidden","true");
-    const max = Math.max(...values);
+    const min = Math.min(...values), max = Math.max(...values);
     let path = "";
     samples.forEach((v,i) => {
       if (v === null) return;
-      const x = 2 + i * 196 / Math.max(1,samples.length-1), y = 33 - v/max*29;
-      path += `${i && samples[i-1] !== null ? "L" : "M"}${x},${y} `;
+      const x = 2 + i * 196 / Math.max(1,samples.length-1), y = max===min ? 18 : 33 - (v-min)/(max-min)*29;
+      path += `${path ? "L" : "M"}${x},${y} `;
       const point = document.createElementNS(ns,"circle"), title = document.createElementNS(ns,"title");
       point.setAttribute("cx",x); point.setAttribute("cy",y); point.setAttribute("r","1.5");
       point.setAttribute("fill","currentColor");
-      title.textContent = `${new Date(days[i].ts*1000).toLocaleDateString("en",{timeZone:"UTC"})}: ${v.toFixed(1)} ms`;
+      title.textContent = `${clockFormat.format(points[i].timestamp*1000)}: ${v} ms`;
       point.append(title); svg.append(point);
     });
     const line = document.createElementNS(ns,"path"); line.setAttribute("d",path);
     line.setAttribute("fill","none"); line.setAttribute("stroke","currentColor");
-    line.setAttribute("stroke-width","2"); line.setAttribute("vector-effect","non-scaling-stroke");
-    svg.prepend(line); figure.append(svg);
+    line.setAttribute("stroke-width","3"); line.setAttribute("vector-effect","non-scaling-stroke");
+    svg.prepend(line);
+    const plot=document.createElement("div"), scale=document.createElement("div");
+    plot.className="plot"; scale.className="scale";
+    for (const value of new Set([max,min])) {
+      const tick=document.createElement("span"); tick.textContent=value; scale.append(tick);
+    }
+    plot.append(scale,svg); figure.append(plot);
   }
-  caption.textContent = values.length ? `Daily avg. latency · 7 days · peak ${Math.round(Math.max(...values))} ms` : "Latency data unavailable";
+  caption.textContent = values.length ? "Latency (ms) · last hour" : "No latency data for the last hour";
+  figure.title="Dots show measured one-minute averages. The line connects available measurements.";
   figure.append(caption);
   if (values.length) {
     const series = document.createElement("p");
     series.className = "sr-only";
-    series.textContent = days.map((day,i) => `${new Date(day.ts*1000).toLocaleDateString("en",{timeZone:"UTC"})}: ${samples[i] === null ? "No data" : samples[i].toFixed(1)+" ms"}`).join("; ");
+    series.textContent = points.map((point,i) => `${clockFormat.format(point.timestamp*1000)}: ${samples[i] === null ? "No data" : samples[i]+" ms"}`).join("; ");
     figure.append(series);
   }
-  return figure;
 }
 const capacity = 12;
 for (let fixed=0;fixed<capacity;fixed++) $("slots").add(new Option(`${fixed} fixed / ${capacity-fixed} rotating`,fixed));
@@ -236,7 +519,7 @@ function scheduleRotation() {
     rotationTimer = setTimeout(nextScreen,15000);
 }
 function nextScreen() {
-  screen = (screen+1) % screens;
+  screen++;
   draw(); scheduleRotation();
 }
 function draw(tags = selected(), holiday = config.showHoliday !== false,
@@ -250,27 +533,30 @@ function draw(tags = selected(), holiday = config.showHoliday !== false,
     const alerts = error ? [] : ["DOWN","DEGRADED"].flatMap(status=>tags.filter(t=>bars.get(t)?.currentStatus===status));
     const normal = tags.filter(t=>!alerts.includes(t));
     const preferred = normal.filter(t=>pinned.includes(t)).concat(normal.filter(t=>!pinned.includes(t)));
-    const fixed = alerts.concat(preferred.slice(0,Math.max(0,fixedSlots-alerts.length)));
-    const pool = tags.filter(t => !fixed.includes(t));
-    const room = Math.max(0,capacity-fixed.length);
-    screens = room ? Math.max(1,Math.ceil(pool.length/room)) : 1;
-    screen = Math.min(screen,screens-1);
-    const slice = pool.slice(screen*room,(screen+1)*room);
-    visible = fixed.concat(slice);
+    const fixed = alerts.concat(preferred.slice(0,Math.max(0,fixedSlots-alerts.length))).slice(0,capacity-1);
+    const pool = alerts.concat(normal).filter(t => !fixed.includes(t));
+    const room = capacity-fixed.length;
+    screens = pool.length;
+    // Each slot advances only on its own turn; the next off-screen monitor enters it.
+    visible = fixed.concat(Array.from({length:room},(_,i) =>
+      pool[(i+room*Math.floor((screen+room-1-i)/room)) % pool.length]));
   } else screen = 0;
   $("pageNumber").hidden = screens <= 1;
-  $("pageNumber").textContent = `Page ${screen+1} of ${screens}`;
+  $("pageNumber").textContent = config.autoRotate !== false ? "Rotating" : "Paused";
+  const snowfall = $("panel").open ? $("showSnow").checked : config.showSnow === true;
+  if (snow.hidden === snowfall) { snowfront.hidden=snow.hidden=!snowfall; syncSnow(); }
   if (previousScreens !== screens) scheduleRotation();
   const tileCount = Math.max(1,(rotating ? Math.max(capacity,visible.length) : n) + Number(holiday));
   const columns = tileCount <= 3 ? tileCount : Math.ceil(Math.sqrt(tileCount));
   $("grid").style.gridTemplateColumns = `repeat(${columns},minmax(0,1fr))`;
-  $("grid").style.gridTemplateRows = rotating && !matchMedia("(max-width:600px)").matches ? `repeat(${Math.ceil(tileCount/columns)},minmax(0,1fr))` : "";
   $("grid").replaceChildren(...visible.map(tag => {
     const card = document.createElement("article"), name = document.createElement("h2");
     const text = document.createElement("span"), bar = bars.get(tag);
     const status = error ? "" : bar?.currentStatus;
     card.dataset.status = labels.has(status) ? status : "";
-    name.textContent = bar?.name || tag;
+    const title = document.createElement("span");
+    title.textContent = name.title = bar?.name || tag;
+    name.append(title);
     name.className = "monitor-name";
     if (bar?.image) {
       const logo = document.createElement("img");
@@ -283,12 +569,10 @@ function draw(tags = selected(), holiday = config.showHoliday !== false,
     text.className = "badge";
     const metrics = document.createElement("div");
     metrics.className = "metrics";
-    const latency = document.createElement("span");
     const pct = Number.parseFloat(bar?.uptime);
-    metrics.append(`Uptime (7d): ${Number.isFinite(pct) ? pct.toLocaleString("en",{maximumFractionDigits:2})+"%" : "—"}`,latency);
-    if (bar?.avgLatency) latency.textContent = `Avg. latency: ${bar.avgLatency}`;
+    metrics.textContent = `Uptime (7d): ${Number.isFinite(pct) ? pct.toLocaleString("en",{maximumFractionDigits:2})+"%" : "—"}`;
     card.append(text, name);
-    if (bar && !error) card.append(metrics, latencyTrend(bar.uptimeData));
+    if (bar && !error) card.append(metrics, latencyTrend(tag));
     return card;
   }));
   if (holiday) {
@@ -485,6 +769,7 @@ $("edit").onclick = async () => {
   const version = ++editorVersion;
   homeDefaults = config.tags === null ? [...catalog] : null;
   $("showHoliday").checked = config.showHoliday !== false;
+  $("showSnow").checked = config.showSnow === true;
   $("slots").value = savedSlots();
   $("autoRotate").checked = config.autoRotate !== false;
   $("restore").disabled = $("save").disabled = false;
@@ -538,13 +823,14 @@ $("restore").onclick = async () => {
 };
 $("slots").onchange = preview;
 $("showHoliday").onchange = preview;
+$("showSnow").onchange = preview;
 $("cancel").onclick = () => $("panel").close();
 $("panel").onclose = () => { editorVersion++; draw(); scheduleRotation(); };
 $("save").onclick = () => {
   const tags = draft.filter(x => x.on).map(x => x.tag);
   const followHome = homeDefaults !== null && tags.length === homeDefaults.length && tags.every((tag,i) => tag === homeDefaults[i]);
   if (!tags.length && !followHome) { $("notice").textContent = "Select at least one monitor."; return; }
-  const next = {tags:followHome ? null : tags,fixedSlots:Number($("slots").value),autoRotate:$("autoRotate").checked,showHoliday:$("showHoliday").checked,pinned:draft.filter(x=>x.on && x.pin).map(x=>x.tag)};
+  const next = {tags:followHome ? null : tags,fixedSlots:Number($("slots").value),autoRotate:$("autoRotate").checked,showHoliday:$("showHoliday").checked,showSnow:$("showSnow").checked,pinned:draft.filter(x=>x.on && x.pin).map(x=>x.tag)};
   try { localStorage.setItem(key, JSON.stringify(next)); }
   catch { $("notice").textContent = "Could not save settings in this browser."; return; }
   config = next; screen = 0; $("panel").close(); refresh();
